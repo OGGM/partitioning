@@ -391,7 +391,7 @@ if __name__ == '__main__':
             if file.startswith(word):
                 os.remove(os.path.dirname(input_shp)+'/'+file)
 
-    #test ir it works
+    #test if it works
 
     from oggm import graphics
     tasks.glacier_masks(gdir)
