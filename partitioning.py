@@ -102,7 +102,7 @@ def flowsheds(input_dem):
     new_coord=[]
     dtype=[('flowaccumulation',float),('coordinates',np.float64, (2,))]
     for coord in coordinates:
-        new_coord.append((im[coord[0]][coord[1]],(transform[0]+(coord[1]+1)*transform[1]-25,transform[3]+coord[0]*transform[-1]-25)))
+        new_coord.append((im[coord[0]][coord[1]],(transform[0]+(coord[1]+1)*transform[1]-transform[1]/2,transform[3]+coord[0]*transform[-1]-transform[1]/2)))
     new_coord=np.array(new_coord,dtype=dtype)
     #sort array  by flowaccumulation
     new_coord=np.sort(new_coord, order='flowaccumulation')
@@ -351,10 +351,10 @@ if __name__ == '__main__':
     
     cfg.initialize()
     base_dir = os.path.join(os.path.expanduser('/home/juliaeis/Dokumente/OGGM/work_dir'), 'GlacierDir_Example')
-    #entity = gpd.GeoDataFrame.from_file('/home/juliaeis/Dokumente/OGGM/work_dir/GlacierDir_Example/RGI40-11.00663/outlines.shp').iloc[0]
-    entity = gpd.GeoDataFrame.from_file(get_demo_file('Hintereisferner.shp')).iloc[0]
-    gdir = oggm.GlacierDirectory(entity, base_dir=base_dir)
-    #gdir=oggm.GlacierDirectory('RGI40-11.00663',base_dir=base_dir)
+    entity = gpd.GeoDataFrame.from_file('/home/juliaeis/Dokumente/OGGM/work_dir/GlacierDir_Example/RGI40-11.00663/outlines.shp').iloc[0]
+    #entity = gpd.GeoDataFrame.from_file(get_demo_file('Hintereisferner.shp')).iloc[0]
+    #gdir = oggm.GlacierDirectory(entity, base_dir=base_dir)
+    gdir=oggm.GlacierDirectory('RGI40-11.00663',base_dir=base_dir)
     print gdir.dir
     #check if required files exists
     if gdir.has_file('outlines',div_id=0) and gdir.has_file('dem', div_id=0):
