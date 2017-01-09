@@ -247,7 +247,8 @@ def merge_flowsheds(P_glac_dir,watershed_dir):
             glacier_n=glacier_n+1
         if not pp_status and len(pp_merged[PP])==1:
             silver_poly_check.update({pp_merged[PP].pop():all_poly_glac[PP]})
-    #check for silver_polygons
+
+    #check for sliver_polygons
     for polygon_id,polygon in silver_poly_check.iteritems():
         if polygon.area < 100000 or (polygon.area < 200000 and compactness(polygon)):
             glacier_poly=merge_silver_poly(glacier_poly,polygon)
@@ -264,13 +265,14 @@ def merge_flowsheds(P_glac_dir,watershed_dir):
     with fiona.open(os.path.dirname(watershed_dir) + '/outlines.shp', 'r') as outline:
         with fiona.open(os.path.dirname(P_glac_dir) + '/sliver.shp', "w", "ESRI Shapefile",{'geometry': 'Polygon', 'properties': {}}, crs) as sli:
             for polygon in shape(outline.next()['geometry']).difference(total_glacier).buffer(-0.1):
-                glacier_poly=merge_silver_poly(glacier_poly,polygon.buffer(0.1))
+                glacier_poly=merge_silver_poly(glacier_poly,polygon.buffer(0.2))
                 sli.write({'properties': {},'geometry': mapping(polygon)})
 
     from itertools import combinations
     glacier_keys = glacier_poly.keys()
     inter={(pair[0],pair[1]):glacier_poly[pair[0]].intersection(glacier_poly[pair[1]]) for pair in combinations(glacier_poly.keys(), 2)}
     #for key in inter.keys():
+
     while len(inter.keys()) is not 0:
         key=inter.keys()[0]
         if inter[key].type in ['Polygon','MultiPolygon','GeometryCollection']:
@@ -296,16 +298,27 @@ def merge_flowsheds(P_glac_dir,watershed_dir):
                 del glacier_poly[key[1]]
             elif shape(glacier_poly[key[0]]).area > shape(glacier_poly[key[1]]).area:
                 if (shape(glacier_poly[key[1]]).difference(inter[key]).buffer(-0.1)).buffer(0.1).type is 'Polygon':
-                    glacier_poly[key[1]]=(shape(glacier_poly[key[1]]).difference(inter[key]).buffer(-0.1)).buffer(0.1)
+                    #glacier_poly[key[1]]=(shape(glacier_poly[key[1]]).difference(inter[key]).buffer(-0.1)).buffer(0.1)
+                    glacier_poly[key[1]] = shape(glacier_poly[key[1]]).difference(inter[key])
                 else:
-                    glacier_poly[key[0]] = (shape(glacier_poly[key[0]]).difference(inter[key]).buffer(-0.1)).buffer(0.1)
-
+                    #glacier_poly[key[0]] = (shape(glacier_poly[key[0]]).difference(inter[key]).buffer(-0.1)).buffer(0.1)
+                    glacier_poly[key[0]] = shape(glacier_poly[key[0]]).difference(inter[key])
             else:
                 if (shape(glacier_poly[key[0]]).difference(inter[key]).buffer(-0.1)).buffer(0.1).type is 'Polygon':
-                    glacier_poly[key[0]] = (shape(glacier_poly[key[0]]).difference(inter[key]).buffer(-0.1)).buffer(0.1)
+                    #glacier_poly[key[0]] = (shape(glacier_poly[key[0]]).difference(inter[key]).buffer(-0.1)).buffer(0.1)
+                    glacier_poly[key[0]] = shape(glacier_poly[key[0]]).difference(inter[key])
                 else:
-                    glacier_poly[key[1]] = (shape(glacier_poly[key[1]]).difference(inter[key]).buffer(-0.1)).buffer(0.1)
+                    #glacier_poly[key[1]] = (shape(glacier_poly[key[1]]).difference(inter[key]).buffer(-0.1)).buffer(0.1)
+                    glacier_poly[key[1]] = shape(glacier_poly[key[1]]).difference(inter[key])
         del inter[key]
+    #check if final_glaciers are not sliver polygon:
+    keys=glacier_poly.keys()
+    for glac_id in keys:
+        glac=glacier_poly[glac_id]
+        if glac.area < 100000 or (glac.area < 200000 and compactness(glac)):
+            del glacier_poly[glac_id]
+            glacier_poly=merge_silver_poly(glacier_poly,glac)
+
     with fiona.open(os.path.dirname(P_glac_dir) + '/outlines.shp', 'r') as outline:
         properties=outline.next()['properties']
         i=1
@@ -351,10 +364,11 @@ if __name__ == '__main__':
     
     cfg.initialize()
     base_dir = os.path.join(os.path.expanduser('/home/juliaeis/Dokumente/OGGM/work_dir'), 'GlacierDir_Example')
-    entity = gpd.GeoDataFrame.from_file('/home/juliaeis/Dokumente/OGGM/work_dir/GlacierDir_Example/RGI40-11.00663/outlines.shp').iloc[0]
     #entity = gpd.GeoDataFrame.from_file(get_demo_file('Hintereisferner.shp')).iloc[0]
     #gdir = oggm.GlacierDirectory(entity, base_dir=base_dir)
-    gdir=oggm.GlacierDirectory('RGI40-11.00663',base_dir=base_dir)
+    gdir=oggm.GlacierDirectory('RGI40-11.00746',base_dir=base_dir)
+    entity = gpd.GeoDataFrame.from_file(
+        '/home/juliaeis/Dokumente/OGGM/work_dir/GlacierDir_Example/RGI40-11.00687/outlines.shp').iloc[0]
     print gdir.dir
     #check if required files exists
     if gdir.has_file('outlines',div_id=0) and gdir.has_file('dem', div_id=0):
@@ -381,13 +395,14 @@ if __name__ == '__main__':
     merge_flowsheds(P_glac,watersheds)
     #delete files which are not needed anymore
     for file in os.listdir(os.path.dirname(input_shp)):
-        for word in ['buffer','all_','P_','flow','sliver','gutter','masked']:
+        for word in ['buffer','flow','gutter','masked']:
             if file.startswith(word):
                 os.remove(os.path.dirname(input_shp)+'/'+file)
 
     #test if it works
-
+    '''
     from oggm import graphics
+
     tasks.glacier_masks(gdir)
     tasks.compute_centerlines(gdir)
     tasks.compute_downstream_lines(gdir)
@@ -397,3 +412,4 @@ if __name__ == '__main__':
 
     graphics.plot_centerlines(gdir)
     plt.show()
+    '''
