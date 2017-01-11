@@ -267,12 +267,15 @@ def merge_flowsheds(P_glac_dir,watershed_dir):
             for polygon in shape(outline.next()['geometry']).difference(total_glacier).buffer(-0.1):
                 glacier_poly=merge_silver_poly(glacier_poly,polygon.buffer(0.2))
                 sli.write({'properties': {},'geometry': mapping(polygon)})
+    with fiona.open(os.path.dirname(P_glac_dir) + '/glaciers.shp', "w", "ESRI Shapefile",{'geometry': 'Polygon', 'properties': {'name':'str'}}, crs) as gla:
+        for id,polygon in glacier_poly.iteritems():
+            gla.write({'properties': {'name':id}, 'geometry': mapping(polygon)})
 
     from itertools import combinations
     glacier_keys = glacier_poly.keys()
     inter={(pair[0],pair[1]):glacier_poly[pair[0]].intersection(glacier_poly[pair[1]]) for pair in combinations(glacier_poly.keys(), 2)}
+    #print inter.keys()
     #for key in inter.keys():
-
     while len(inter.keys()) is not 0:
         key=inter.keys()[0]
         if inter[key].type in ['Polygon','MultiPolygon','GeometryCollection']:
@@ -282,7 +285,6 @@ def merge_flowsheds(P_glac_dir,watershed_dir):
                     if polygon.type in ['Polygon', 'Mulltipolygon']:
                         poly = poly.union(polygon)
                 inter[key]=poly
-            #print key[1],glacier_poly.keys()
             if inter[key].area / shape(glacier_poly[key[0]]).area > 0.5 or inter[key].area / shape(glacier_poly[key[1]]).area > 0.5:
                 #union of both glaciers
                 glacier_poly[key[0]]=shape(glacier_poly[key[0]]).union(glacier_poly[key[1]])
@@ -290,10 +292,12 @@ def merge_flowsheds(P_glac_dir,watershed_dir):
                 for tupel in inter.keys():
                     if tupel is not key:
                         if key[1] is tupel[0]:
-                            inter.update({(key[0],tupel[1]):inter[tupel]})
+                            #inter.update({(key[0],tupel[1]):inter[tupel]})
+                            inter.update({(key[0], tupel[1]):glacier_poly[key[0]].intersection(glacier_poly[tupel[1]])})
                             del inter[tupel]
                         elif key[1] is tupel[1]:
-                            inter.update({(tupel[0],key[0]):inter[tupel]})
+                            #inter.update({(tupel[0],key[0]):inter[tupel]})
+                            inter.update({(tupel[0], key[0]): glacier_poly[tupel[0]].intersection(glacier_poly[key[0]])})
                             del inter[tupel]
                 del glacier_poly[key[1]]
             elif shape(glacier_poly[key[0]]).area > shape(glacier_poly[key[1]]).area:
