@@ -301,7 +301,10 @@ def merge_flowsheds(P_glac_dir,watershed_dir):
             os.mkdir(os.path.dirname(P_glac_dir)+'/divide_'+str(i).zfill(2))
         with fiona.open(os.path.dirname(P_glac_dir)+'/divide_'+str(i).zfill(2)+'/outlines.shp',"w", "ESRI Shapefile",schema, crs) as gla:
             #for pol in glacier_poly
-            outlines['properties']['AREA']=glacier_poly[pol].area/1000000
+            if 'AREA' in schema['properties'].keys():
+                outlines['properties']['AREA']=glacier_poly[pol].area/1000000
+            elif 'Area' in schema['properties'].keys() :
+                outlines['properties']['Area'] = glacier_poly[pol].area / 1000000
             gla.write({'properties': outlines['properties'],'geometry': mapping(glacier_poly[pol])})
         i=i+1
     print 'glaciers:',i-1
@@ -333,6 +336,7 @@ def dividing_glaciers(input_dem,input_shp):
         outlines=shapefile.next()
         crs=shapefile.crs
         schema=shapefile.schema
+
     #clip dem along buffer1
     masked_dem=clip(input_dem,input_shp,pixelsize*4,'masked')
     #create gutter
@@ -352,6 +356,7 @@ def dividing_glaciers(input_dem,input_shp):
             if file.startswith(word):
                 os.remove(os.path.dirname(input_shp) + '/' + file)
 
+
 if __name__ == '__main__':
     import time
     start0=time.time()
@@ -360,7 +365,7 @@ if __name__ == '__main__':
     #entity = gpd.GeoDataFrame.from_file(get_demo_file('Hintereisferner.shp')).iloc[0]
     #gdir = oggm.GlacierDirectory(entity, base_dir=base_dir)
     for dir in os.listdir(base_dir):
-        if dir.startswith('RGI40-11.00897'):
+        if dir.startswith('RGI50'):
             gdir=oggm.GlacierDirectory(dir,base_dir=base_dir)
             entity = gpd.GeoDataFrame.from_file(gdir.dir+'/outlines.shp').iloc[0]
             print gdir.dir
