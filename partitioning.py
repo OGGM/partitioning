@@ -28,8 +28,11 @@ from shapely.geometry import Point,Polygon,MultiPolygon
 def clip(input_dem,shp,buffersize,out_name):
         
     output_dem=os.path.dirname(input_dem)+'/'+out_name+'.tif'
-    with fiona.open(shp, "r") as shapefile:
-        geoms = [mapping(shape(shapefile.next()['geometry']).buffer(buffersize))]
+    if os.path.basename(shp) == 'outlines.shp':
+        geoms=[mapping(shape(outlines['geometry']).buffer(buffersize))]
+    else:
+        with fiona.open(shp, "r") as shapefile:
+            geoms = [mapping(shape(shapefile.next()['geometry']).buffer(buffersize))]
 
     with rasterio.open(input_dem) as src:
         #out_image, out_transform = mask(src, geoms,nodata=np.nan, crop=False)
@@ -91,11 +94,6 @@ def flowsheds(input_dem):
     new_coord=np.sort(new_coord, order='flowaccumulation')
     #reverse array
     new_coord=new_coord[::-1]
-    with fiona.open(os.path.dirname(input_dem)+'/outlines.shp', "r") as outlines:
-        out=outlines.next()['geometry']
-        crs= outlines.crs
-        global schema
-        schema=outlines.schema
 
     with fiona.open(os.path.dirname(input_dem)+ '/P_glac.shp', "w", "ESRI Shapefile",{'geometry': 'MultiPolygon', 'properties': {'flow_acc': 'float','id':'int'}}, crs) as p_glac:
 
@@ -113,7 +111,7 @@ def flowsheds(input_dem):
                 #remove first element
                 new_coord=new_coord[1:]
                 #create radius around PPs and clip with outlines
-                area=({'properties': {'flow_acc': coord['flowaccumulation'],'id':i},'geometry': mapping(shape(out).intersection(shape(Point(coord['coordinates']).buffer(p_glac_radius(14.3,0.5,coord['flowaccumulation'])))))})
+                area=({'properties': {'flow_acc': coord['flowaccumulation'],'id':i},'geometry': mapping(shape(outlines['geometry']).intersection(shape(Point(coord['coordinates']).buffer(p_glac_radius(14.3,0.5,coord['flowaccumulation'])))))})
                 #if result is Polygon, add it to shapefile
                 if area['geometry']['type'] is 'Polygon':
                     p_glac.write(area)
@@ -137,7 +135,7 @@ def flowsheds(input_dem):
                 with fiona.open(dir+'/watershed_out.shp', "r", "ESRI Shapefile") as watershed:
                     w=watershed.next()
                 #cut watershed with outlines
-                w['geometry']=mapping(shape(out).intersection(shape(w['geometry'])))
+                w['geometry']=mapping(shape(outlines['geometry']).intersection(shape(w['geometry'])))
                 w['properties']['id']=i
 
                 if w['geometry']['type'] is 'Polygon':
@@ -166,17 +164,13 @@ def flowsheds(input_dem):
                 i=i+1
     return [os.path.dirname(input_dem)+ '/P_glac.shp',os.path.dirname(input_dem)+'/all_watershed.shp']
 
-def gutter(masked_dem, outline_shp, depth):
-    with fiona.open(outline_shp,'r') as out:
-        schema=out.schema
-        crs=out.crs
-        outline=out.next()
+def gutter(masked_dem, depth):
 
     gutter_shp = os.path.dirname(input_shp) + '/gutter.shp'
 
     with fiona.open(gutter_shp, "w", "ESRI Shapefile", schema, crs) as output:
-        output.write({'properties': outline['properties'],
-                      'geometry': mapping(shape(outline['geometry']).buffer(pixelsize*2).difference(shape(outline['geometry']).buffer(pixelsize)))})
+        output.write({'properties': outlines['properties'],
+                      'geometry': mapping(shape(outlines['geometry']).buffer(pixelsize*2).difference(shape(outlines['geometry']).buffer(pixelsize)))})
 
     gutter_dem = clip(masked_dem, gutter_shp,0, 'gutter')
 
@@ -238,7 +232,7 @@ def merge_flowsheds(P_glac_dir,watershed_dir):
     #check for sliver_polygons
     for polygon_id,polygon in silver_poly_check.iteritems():
         if polygon.area < 100000 or (polygon.area < 200000 and compactness(polygon)):
-            glacier_poly=merge_silver_poly(glacier_poly,polygon)
+            glacier_poly=merge_sliver_poly(glacier_poly,polygon)
 
         else:
             glacier_id.update({'glacier'+str(glacier_n):{polygon_id}})
@@ -249,10 +243,9 @@ def merge_flowsheds(P_glac_dir,watershed_dir):
     total_glacier=MultiPolygon()
     for glacier in glacier_poly:
         total_glacier=shape(total_glacier).union(shape(glacier_poly[glacier]))
-    with fiona.open(os.path.dirname(watershed_dir) + '/outlines.shp', 'r') as outline:
-        next=outline.next()
-        for polygon in shape(next['geometry']).difference(total_glacier.buffer(0.01)).buffer(-0.1):
-            glacier_poly=merge_silver_poly(glacier_poly,polygon.buffer(0.2))
+
+    for polygon in shape(outlines['geometry']).difference(total_glacier.buffer(0.01)).buffer(-0.1):
+        glacier_poly=merge_sliver_poly(glacier_poly,polygon.buffer(0.2))
 
     #repair overlapping glaciers
     from itertools import combinations
@@ -299,22 +292,21 @@ def merge_flowsheds(P_glac_dir,watershed_dir):
         glac=glacier_poly[glac_id]
         if glac.area < 100000 or (glac.area < 200000 and compactness(glac)):
             del glacier_poly[glac_id]
-            glacier_poly=merge_silver_poly(glacier_poly,glac)
+            glacier_poly=merge_sliver_poly(glacier_poly,glac)
 
-    with fiona.open(os.path.dirname(P_glac_dir) + '/outlines.shp', 'r') as outline:
-        properties=outline.next()['properties']
-        i=1
-        for pol in glacier_poly:
-            if not os.path.isdir(os.path.dirname(P_glac_dir)+'/divide_'+str(i).zfill(2)):
-                os.mkdir(os.path.dirname(P_glac_dir)+'/divide_'+str(i).zfill(2))
-            with fiona.open(os.path.dirname(P_glac_dir)+'/divide_'+str(i).zfill(2)+'/outlines.shp',"w", "ESRI Shapefile",outline.schema, crs) as gla:
-                #for pol in glacier_poly
-                properties['AREA']=glacier_poly[pol].area/1000000
-                gla.write({'properties': properties,'geometry': mapping(glacier_poly[pol])})
-            i=i+1
-        print 'glaciers:',i-1
 
-def merge_silver_poly(glacier_poly,polygon):
+    i=1
+    for pol in glacier_poly:
+        if not os.path.isdir(os.path.dirname(P_glac_dir)+'/divide_'+str(i).zfill(2)):
+            os.mkdir(os.path.dirname(P_glac_dir)+'/divide_'+str(i).zfill(2))
+        with fiona.open(os.path.dirname(P_glac_dir)+'/divide_'+str(i).zfill(2)+'/outlines.shp',"w", "ESRI Shapefile",schema, crs) as gla:
+            #for pol in glacier_poly
+            outlines['properties']['AREA']=glacier_poly[pol].area/1000000
+            gla.write({'properties': outlines['properties'],'geometry': mapping(glacier_poly[pol])})
+        i=i+1
+    print 'glaciers:',i-1
+
+def merge_sliver_poly(glacier_poly,polygon):
     max_boundary = 0
     max_boundary_id = -1
     for i, glac in glacier_poly.iteritems():
@@ -332,26 +324,33 @@ def p_glac_radius(a, b, F):
         return 3500
 
 def dividing_glaciers(input_dem,input_shp):
-    #******************* preprocessing ******************
-
+    #*************************************************** preprocessing *************************************************
+    #read outlines.shp
+    global outlines
+    global crs
+    global schema
+    with fiona.open(input_shp,'r') as shapefile:
+        outlines=shapefile.next()
+        crs=shapefile.crs
+        schema=shapefile.schema
     #clip dem along buffer1
     masked_dem=clip(input_dem,input_shp,pixelsize*4,'masked')
     #create gutter
-    gutter_dem=gutter(masked_dem,input_shp,100)
+    gutter_dem=gutter(masked_dem,100)
 
-    #****************** flow accumulation ******************
+    #****************************** Identification of pour points and flowshed calculation *****************************
     flow_gutter = flowacc(gutter_dem)
     # flowshed calculation
     [P_glac, watersheds] = flowsheds(flow_gutter)
 
+    #*************** Allocation of flowsheds to individual glaciers & Identification of sliver polygons ****************
     merge_flowsheds(P_glac, watersheds)
+
     # delete files which are not needed anymore
     for file in os.listdir(os.path.dirname(input_shp)):
         for word in ['all', 'P_glac','flow', 'gutter', 'masked']:
             if file.startswith(word):
                 os.remove(os.path.dirname(input_shp) + '/' + file)
-
-
 
 if __name__ == '__main__':
     import time
