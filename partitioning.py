@@ -25,21 +25,15 @@ from skimage import img_as_float
 from skimage.feature import peak_local_max
 from shapely.geometry import Point,Polygon,MultiPolygon
 
-def buffer(input_shp,width):
-    output_shp = os.path.dirname(input_shp) + '/buffer_' + str(width) + '.shp'
-    with fiona.open(input_shp, "r") as input:
-        with fiona.open(output_shp, "w", "ESRI Shapefile", input.schema, crs = input.crs) as output:
-            for f in input:
-                output.write({'properties': f['properties'],'geometry': mapping(shape(f['geometry']).buffer(width))})
-    return output_shp  
-
-def clip(input_dem,shp,out_name):
+def clip(input_dem,shp,buffersize,out_name):
         
     output_dem=os.path.dirname(input_dem)+'/'+out_name+'.tif'
     with fiona.open(shp, "r") as shapefile:
-        geoms = [feature['geometry'] for feature in shapefile]
+        geoms = [mapping(shape(shapefile.next()['geometry']).buffer(buffersize))]
+
     with rasterio.open(input_dem) as src:
-        out_image, out_transform = mask(src, geoms,nodata=np.nan, crop=False)
+        #out_image, out_transform = mask(src, geoms,nodata=np.nan, crop=False)
+        out_image, out_transform = mask(src,geoms , nodata=np.nan, crop=False)
         out_meta = src.meta.copy()
     
     out_meta.update({"driver": "GTiff",
@@ -63,17 +57,6 @@ def compactness(polygon):
     else:
         return False
 
-def difference(shp_1,shp_2):
-    
-    output_shp=os.path.dirname(input_shp)+'/gutter.shp'
-    with fiona.open(shp_1,"r") as shapefile1:
-        print shapefile1.crs
-        with fiona.open(shp_2,"r") as shapefile2:
-            geom1=next(shapefile1)
-            geom2=next(shapefile2)
-            with fiona.open(output_shp, "w", "ESRI Shapefile", shapefile1.schema, crs = shapefile1.crs) as output:
-                output.write({'properties': geom1['properties'],'geometry':mapping(shape(geom1['geometry']).difference(shape(geom2['geometry'])))})
-    return output_shp
 
 def flowacc(input_dem):
         
@@ -83,7 +66,7 @@ def flowacc(input_dem):
     routing.flow_direction_d_inf(input_dem, new_flow_direction_map_uri)
     #calculate flow_accumulation
     routing.flow_accumulation(new_flow_direction_map_uri,input_dem, new_flow_map_accumulation_uri)
-    clip(new_flow_map_accumulation_uri, os.path.dirname(input_dem)+'/gutter.shp', 'flow_gutter')
+    clip(new_flow_map_accumulation_uri, os.path.dirname(input_dem)+'/gutter.shp', 0,'flow_gutter')
     return os.path.dirname(input_dem)+'/flow_gutter.tif'
 
 def flowsheds(input_dem):
@@ -113,85 +96,89 @@ def flowsheds(input_dem):
         crs= outlines.crs
         global schema
         schema=outlines.schema
-    with fiona.open(os.path.dirname(input_dem)+'/all_pour_point.shp', "w", "ESRI Shapefile", {'geometry': 'Point', 'properties': {'flow_acc':'float','id':'int','p_glac':'int'}}, crs ) as all_pourP:
 
-        with fiona.open(os.path.dirname(input_dem)+ '/P_glac.shp', "w", "ESRI Shapefile",{'geometry': 'MultiPolygon', 'properties': {'flow_acc': 'float','id':'int'}}, crs) as p_glac:
-    
-            #for each pour point: create shapefile and run delinate watershed
-            with fiona.open(os.path.dirname(input_dem)+'/all_watershed.shp', "w", "ESRI Shapefile", {'geometry': 'MultiPolygon', 'properties': {'flow_acc':'float','id':'int'}}, crs) as all_watershed:
-                i = 0
-                m = len(new_coord)
-                while len(new_coord) is not 0:
-                    #create directory
-                    dir=os.path.dirname(input_dem)+'/'+str(i)
-                    if not os.path.isdir(dir):
-                        os.makedirs(dir)
+    with fiona.open(os.path.dirname(input_dem)+ '/P_glac.shp', "w", "ESRI Shapefile",{'geometry': 'MultiPolygon', 'properties': {'flow_acc': 'float','id':'int'}}, crs) as p_glac:
 
-                    coord=new_coord[0]
-                    #remove first element
-                    new_coord=new_coord[1:]
-                    #create radius around PPs and clip with outlines
-                    area=({'properties': {'flow_acc': coord['flowaccumulation'],'id':i},'geometry': mapping(shape(out).intersection(shape(Point(coord['coordinates']).buffer(p_glac_radius(14.3,0.5,coord['flowaccumulation'])))))})
-                    #if result is Polygon, add it to shapefile
-                    if area['geometry']['type'] is 'Polygon':
-                        p_glac.write(area)
-                        all_pourP.write({'properties': {'flow_acc': coord['flowaccumulation'], 'id': i,'p_glac': len(area['geometry']['coordinates'])},'geometry': {'type': 'Point', 'coordinates': coord['coordinates']}})
-                    #if result is MultiPolygon, add only the polygon whose perimeter is closest to PP
-                    elif area['geometry']['type'] is 'MultiPolygon':
-                        all_pourP.write({'properties': {'flow_acc': coord['flowaccumulation'], 'id': i,'p_glac': len(area['geometry']['coordinates'])},'geometry': {'type': 'Point', 'coordinates': coord['coordinates']}})
-                        min_dist=[]
-                        for j in shape(area['geometry']):
-                            min_dist.append(shape(j).distance(Point(coord['coordinates'])))
-                        area['geometry']=mapping(shape(area['geometry'])[np.argmin(min_dist)])
-                        p_glac.write(area)
-                    #add only PP to all_pourPoints.shp
-                    else:
-                        all_pourP.write({'properties': {'flow_acc': coord['flowaccumulation'], 'id': i,'p_glac':0},'geometry': {'type': 'Point', 'coordinates': coord['coordinates']}})
+        #for each pour point: create shapefile and run delinate watershed
+        with fiona.open(os.path.dirname(input_dem)+'/all_watershed.shp', "w", "ESRI Shapefile", {'geometry': 'MultiPolygon', 'properties': {'flow_acc':'float','id':'int'}}, crs) as all_watershed:
+            i = 0
+            m = len(new_coord)
+            while len(new_coord) is not 0:
+                #create directory
+                dir=os.path.dirname(input_dem)+'/'+str(i)
+                if not os.path.isdir(dir):
+                    os.makedirs(dir)
 
-                    # write shapefile with ONE pour_point for watershed (transform unicode to ascii, otherwise segmentation fault)
-                    with fiona.open(dir+'/pour_point.shp', "w", "ESRI Shapefile", {'geometry': 'Point', 'properties': {'flow_acc':'float'}}, {k.encode('ascii'): v for k, v in crs.items()}) as output:
-                        output.write({'properties': {'flow_acc':coord['flowaccumulation']},'geometry': {'type':'Point','coordinates':coord['coordinates']}})
+                coord=new_coord[0]
+                #remove first element
+                new_coord=new_coord[1:]
+                #create radius around PPs and clip with outlines
+                area=({'properties': {'flow_acc': coord['flowaccumulation'],'id':i},'geometry': mapping(shape(out).intersection(shape(Point(coord['coordinates']).buffer(p_glac_radius(14.3,0.5,coord['flowaccumulation'])))))})
+                #if result is Polygon, add it to shapefile
+                if area['geometry']['type'] is 'Polygon':
+                    p_glac.write(area)
+                    #all_pourP.write({'properties': {'flow_acc': coord['flowaccumulation'], 'id': i,'p_glac': len(area['geometry']['coordinates'])},'geometry': {'type': 'Point', 'coordinates': coord['coordinates']}})
+                #if result is MultiPolygon, add only the polygon whose perimeter is closest to PP
+                elif area['geometry']['type'] is 'MultiPolygon':
+                    min_dist=[]
+                    for j in shape(area['geometry']):
+                        min_dist.append(shape(j).distance(Point(coord['coordinates'])))
+                    area['geometry']=mapping(shape(area['geometry'])[np.argmin(min_dist)])
+                    p_glac.write(area)
 
-                    #calculate watershed for pour point
-                    routing.delineate_watershed(os.path.dirname(input_dem)+'/gutter.tif',dir+'/pour_point.shp',0,100, dir+'/watershed_out.shp', dir+'/snapped_outlet_points_uri.shp', dir+'/stream_out_uri.tif')
+                # write shapefile with ONE pour_point for watershed (transform unicode to ascii, otherwise segmentation fault)
+                with fiona.open(dir+'/pour_point.shp', "w", "ESRI Shapefile", {'geometry': 'Point', 'properties': {'flow_acc':'float'}}, {k.encode('ascii'): v for k, v in crs.items()}) as output:
+                    output.write({'properties': {'flow_acc':coord['flowaccumulation']},'geometry': {'type':'Point','coordinates':coord['coordinates']}})
 
-                    #add watershed polygon to watershed_all.shp
-                    with fiona.open(dir+'/watershed_out.shp', "r", "ESRI Shapefile") as watershed:
-                        w=watershed.next()
-                    #cut watershed wit outlines
-                    w['geometry']=mapping(shape(out).intersection(shape(w['geometry'])))
-                    w['properties']['id']=i
+                #calculate watershed for pour point
+                routing.delineate_watershed(os.path.dirname(input_dem)+'/gutter.tif',dir+'/pour_point.shp',0,100, dir+'/watershed_out.shp', dir+'/snapped_outlet_points_uri.shp', dir+'/stream_out_uri.tif')
 
-                    if w['geometry']['type'] is 'Polygon':
+                #add watershed polygon to watershed_all.shp
+                with fiona.open(dir+'/watershed_out.shp', "r", "ESRI Shapefile") as watershed:
+                    w=watershed.next()
+                #cut watershed with outlines
+                w['geometry']=mapping(shape(out).intersection(shape(w['geometry'])))
+                w['properties']['id']=i
+
+                if w['geometry']['type'] is 'Polygon':
+                    all_watershed.write(w)
+                if w['geometry']['type'] is 'MultiPolygon':
+                    #find polygon with minimal distance to pour point
+                    dist=[]
+                    for k in shape(w['geometry']):
+                        dist.append(shape(k).distance(Point(coord['coordinates'])))
+                    #add each polygon to all_watershed.shp
+                    n=0
+                    for l in shape(w['geometry']):
+                        w['geometry'] =mapping(shape(l))
+                        #polygon nearest to PP get current id
+                        if n == np.argmin(dist):
+                            w['properties']['id'] = i
+                        # all other poylgons get new id
+                        else:
+                            m=m+1
+                            w['properties']['id']=m
                         all_watershed.write(w)
-                    if w['geometry']['type'] is 'MultiPolygon':
-                        #find polygon with minimal distance to pour point
-                        dist=[]
-                        for k in shape(w['geometry']):
-                            dist.append(shape(k).distance(Point(coord['coordinates'])))
-                        #add each polygon to all_watershed.shp
-                        n=0
-                        for l in shape(w['geometry']):
-                            w['geometry'] =mapping(shape(l))
-                            #polygon nearest to PP get current id
-                            if n == np.argmin(dist):
-                                w['properties']['id'] = i
-                            # all other poylgons get new id
-                            else:
-                                m=m+1
-                                w['properties']['id']=m
-                            all_watershed.write(w)
-                            n=n+1
+                        n=n+1
 
-                    shutil.rmtree(dir)
+                shutil.rmtree(dir)
 
-                    i=i+1
-    return [os.path.dirname(input_dem)+'/all_pour_point.shp',os.path.dirname(input_dem)+ '/P_glac.shp',os.path.dirname(input_dem)+'/all_watershed.shp']
+                i=i+1
+    return [os.path.dirname(input_dem)+ '/P_glac.shp',os.path.dirname(input_dem)+'/all_watershed.shp']
 
-def gutter(masked_dem, outline_shp, buffer2_shp, depth):
-    buffer3_shp = buffer(outline_shp, pixelsize)
-    gutter_shp = difference(buffer2_shp, buffer3_shp)
-    gutter_dem = clip(masked_dem, gutter_shp, 'gutter')
+def gutter(masked_dem, outline_shp, depth):
+    with fiona.open(outline_shp,'r') as out:
+        schema=out.schema
+        crs=out.crs
+        outline=out.next()
+
+    gutter_shp = os.path.dirname(input_shp) + '/gutter.shp'
+
+    with fiona.open(gutter_shp, "w", "ESRI Shapefile", schema, crs) as output:
+        output.write({'properties': outline['properties'],
+                      'geometry': mapping(shape(outline['geometry']).buffer(pixelsize*2).difference(shape(outline['geometry']).buffer(pixelsize)))})
+
+    gutter_dem = clip(masked_dem, gutter_shp,0, 'gutter')
 
     with rasterio.open(masked_dem) as src1:
         mask_band = np.array(src1.read(1))
@@ -263,58 +250,49 @@ def merge_flowsheds(P_glac_dir,watershed_dir):
     for glacier in glacier_poly:
         total_glacier=shape(total_glacier).union(shape(glacier_poly[glacier]))
     with fiona.open(os.path.dirname(watershed_dir) + '/outlines.shp', 'r') as outline:
-        with fiona.open(os.path.dirname(P_glac_dir) + '/sliver.shp', "w", "ESRI Shapefile",{'geometry': 'Polygon', 'properties': {}}, crs) as sli:
-            for polygon in shape(outline.next()['geometry']).difference(total_glacier).buffer(-0.1):
-                glacier_poly=merge_silver_poly(glacier_poly,polygon.buffer(0.2))
-                sli.write({'properties': {},'geometry': mapping(polygon)})
-    with fiona.open(os.path.dirname(P_glac_dir) + '/glaciers.shp', "w", "ESRI Shapefile",{'geometry': 'Polygon', 'properties': {'name':'str'}}, crs) as gla:
-        for id,polygon in glacier_poly.iteritems():
-            gla.write({'properties': {'name':id}, 'geometry': mapping(polygon)})
+        next=outline.next()
+        for polygon in shape(next['geometry']).difference(total_glacier.buffer(0.01)).buffer(-0.1):
+            glacier_poly=merge_silver_poly(glacier_poly,polygon.buffer(0.2))
 
+    #repair overlapping glaciers
     from itertools import combinations
-    glacier_keys = glacier_poly.keys()
-    inter={(pair[0],pair[1]):glacier_poly[pair[0]].intersection(glacier_poly[pair[1]]) for pair in combinations(glacier_poly.keys(), 2)}
-    #print inter.keys()
-    #for key in inter.keys():
-    while len(inter.keys()) is not 0:
-        key=inter.keys()[0]
-        if inter[key].type in ['Polygon','MultiPolygon','GeometryCollection']:
-            if inter[key].type in ['GeometryCollection']:
-                poly = MultiPolygon()
-                for polygon in inter[key]:
-                    if polygon.type in ['Polygon', 'Mulltipolygon']:
-                        poly = poly.union(polygon)
-                inter[key]=poly
-            if inter[key].area / shape(glacier_poly[key[0]]).area > 0.5 or inter[key].area / shape(glacier_poly[key[1]]).area > 0.5:
-                #union of both glaciers
-                glacier_poly[key[0]]=shape(glacier_poly[key[0]]).union(glacier_poly[key[1]])
-                # delete 2nd glacier
-                for tupel in inter.keys():
-                    if tupel is not key:
-                        if key[1] is tupel[0]:
-                            #inter.update({(key[0],tupel[1]):inter[tupel]})
-                            inter.update({(key[0], tupel[1]):glacier_poly[key[0]].intersection(glacier_poly[tupel[1]])})
-                            del inter[tupel]
-                        elif key[1] is tupel[1]:
-                            #inter.update({(tupel[0],key[0]):inter[tupel]})
-                            inter.update({(tupel[0], key[0]): glacier_poly[tupel[0]].intersection(glacier_poly[key[0]])})
-                            del inter[tupel]
-                del glacier_poly[key[1]]
-            elif shape(glacier_poly[key[0]]).area > shape(glacier_poly[key[1]]).area:
-                if (shape(glacier_poly[key[1]]).difference(inter[key]).buffer(-0.1)).buffer(0.1).type is 'Polygon':
-                    #glacier_poly[key[1]]=(shape(glacier_poly[key[1]]).difference(inter[key]).buffer(-0.1)).buffer(0.1)
-                    glacier_poly[key[1]] = shape(glacier_poly[key[1]]).difference(inter[key])
+    inter=[[pair[0],pair[1]] for pair in combinations(glacier_poly.keys(),2)]
+    while len(inter) is not 0:
+
+        key=inter.pop(0)
+        if key[0] is not key[1]:
+            intersection=glacier_poly[key[0]].intersection(glacier_poly[key[1]])
+            if intersection.type in ['Polygon','MultiPolygon','GeometryCollection'] :
+                if intersection.type in ['GeometryCollection']:
+                    poly = MultiPolygon()
+                    for polygon in intersection:
+                        if polygon.type in ['Polygon', 'Mulltipolygon']:
+                            poly = poly.union(polygon)
+                    intersection=poly
+                if intersection.area / shape(glacier_poly[key[0]]).area > 0.5 or intersection.area / shape(glacier_poly[key[1]]).area > 0.5:
+                    #union of both glaciers
+                    glacier_poly[key[0]]=shape(glacier_poly[key[0]]).union(glacier_poly[key[1]])
+                    # delete 2nd glacier
+                    for i,tupel in enumerate(inter):
+
+                        if key[1] in tupel:
+                            if tupel[0] is not tupel[1]:
+                                inter[i].append(key[0])
+                                inter[i].remove(key[1])
+
+                    del glacier_poly[key[1]]
+                elif shape(glacier_poly[key[0]]).area > shape(glacier_poly[key[1]]).area:
+                    if (shape(glacier_poly[key[1]]).difference(glacier_poly[key[0]]).buffer(-0.1)).buffer(0.1).type is 'Polygon':
+                        glacier_poly[key[1]] = shape(glacier_poly[key[1]]).difference(glacier_poly[key[0]])
+                    else:
+                        glacier_poly[key[0]] = shape(glacier_poly[key[0]]).difference(glacier_poly[key[1]])
+
                 else:
-                    #glacier_poly[key[0]] = (shape(glacier_poly[key[0]]).difference(inter[key]).buffer(-0.1)).buffer(0.1)
-                    glacier_poly[key[0]] = shape(glacier_poly[key[0]]).difference(inter[key])
-            else:
-                if (shape(glacier_poly[key[0]]).difference(inter[key]).buffer(-0.1)).buffer(0.1).type is 'Polygon':
-                    #glacier_poly[key[0]] = (shape(glacier_poly[key[0]]).difference(inter[key]).buffer(-0.1)).buffer(0.1)
-                    glacier_poly[key[0]] = shape(glacier_poly[key[0]]).difference(inter[key])
-                else:
-                    #glacier_poly[key[1]] = (shape(glacier_poly[key[1]]).difference(inter[key]).buffer(-0.1)).buffer(0.1)
-                    glacier_poly[key[1]] = shape(glacier_poly[key[1]]).difference(inter[key])
-        del inter[key]
+                    if (shape(glacier_poly[key[0]]).difference(glacier_poly[key[1]]).buffer(-0.1)).buffer(0.1).type is 'Polygon':
+                        glacier_poly[key[0]] = shape(glacier_poly[key[0]]).difference(glacier_poly[key[1]])
+                    else:
+                        glacier_poly[key[1]] = shape(glacier_poly[key[1]]).difference(glacier_poly[key[0]])
+
     #check if final_glaciers are not sliver polygon:
     keys=glacier_poly.keys()
     for glac_id in keys:
@@ -353,58 +331,61 @@ def p_glac_radius(a, b, F):
     else:
         return 3500
 
-def preprocessing(input_dem,input_shp):
-    #buffer1
-    buffer1_shp=buffer(input_shp,pixelsize*4)
-    #buffer2
-    buffer2_shp=buffer(input_shp,pixelsize*2)
+def dividing_glaciers(input_dem,input_shp):
+    #******************* preprocessing ******************
+
     #clip dem along buffer1
-    masked_dem=clip(input_dem,buffer1_shp,'masked')
+    masked_dem=clip(input_dem,input_shp,pixelsize*4,'masked')
     #create gutter
-    gutter_dem=gutter(masked_dem,input_shp,buffer2_shp,100)
-    return gutter_dem
+    gutter_dem=gutter(masked_dem,input_shp,100)
+
+    #****************** flow accumulation ******************
+    flow_gutter = flowacc(gutter_dem)
+    # flowshed calculation
+    [P_glac, watersheds] = flowsheds(flow_gutter)
+
+    merge_flowsheds(P_glac, watersheds)
+    # delete files which are not needed anymore
+    for file in os.listdir(os.path.dirname(input_shp)):
+        for word in ['all', 'P_glac','flow', 'gutter', 'masked']:
+            if file.startswith(word):
+                os.remove(os.path.dirname(input_shp) + '/' + file)
+
+
 
 if __name__ == '__main__':
-    
+    import time
+    start0=time.time()
     cfg.initialize()
     base_dir = os.path.join(os.path.expanduser('/home/juliaeis/Dokumente/OGGM/work_dir'), 'GlacierDir_Example')
     #entity = gpd.GeoDataFrame.from_file(get_demo_file('Hintereisferner.shp')).iloc[0]
     #gdir = oggm.GlacierDirectory(entity, base_dir=base_dir)
-    gdir=oggm.GlacierDirectory('RGI40-11.00746',base_dir=base_dir)
-    entity = gpd.GeoDataFrame.from_file(
-        '/home/juliaeis/Dokumente/OGGM/work_dir/GlacierDir_Example/RGI40-11.00687/outlines.shp').iloc[0]
-    print gdir.dir
-    #check if required files exists
-    if gdir.has_file('outlines',div_id=0) and gdir.has_file('dem', div_id=0):
-        pass
-    else:
-        tasks.define_glacier_region(gdir,entity=entity)
-    #tasks.glacier_masks(gdir)
-    ###################preprocessing########################
-    input_shp =gdir.get_filepath('outlines',div_id=0)
-    input_dem=gdir.get_filepath('dem',div_id=0)
+    for dir in os.listdir(base_dir):
+        if dir.startswith('RGI40-11.00897'):
+            gdir=oggm.GlacierDirectory(dir,base_dir=base_dir)
+            entity = gpd.GeoDataFrame.from_file(gdir.dir+'/outlines.shp').iloc[0]
+            print gdir.dir
+            #check if required files exists
+            if gdir.has_file('outlines',div_id=0) and gdir.has_file('dem', div_id=0):
+                pass
+            else:
+                tasks.define_glacier_region(gdir,entity=entity)
+            #tasks.glacier_masks(gdir)
+            ###################preprocessing########################
+            input_shp =gdir.get_filepath('outlines',div_id=0)
+            input_dem=gdir.get_filepath('dem',div_id=0)
 
-    #get pixel size
-    with rasterio.open(input_dem) as dem:
-        global pixelsize
-        pixelsize=int(dem.transform[1])
-    gutter_dem=preprocessing(input_dem, input_shp)
+            #get pixel size
+            with rasterio.open(input_dem) as dem:
+                global pixelsize
+                pixelsize=int(dem.transform[1])
+            dividing_glaciers(input_dem, input_shp)
 
-    ####flow accumulation
-    flow_gutter=flowacc(gutter_dem)
 
-    #flowshed calculation
-    [all_PP,P_glac,watersheds]=flowsheds(flow_gutter)
-
-    merge_flowsheds(P_glac,watersheds)
-    #delete files which are not needed anymore
-    for file in os.listdir(os.path.dirname(input_shp)):
-        for word in ['buffer','flow','gutter','masked']:
-            if file.startswith(word):
-                os.remove(os.path.dirname(input_shp)+'/'+file)
+    print time.time()-start0
 
     #test if it works
-    '''
+
     from oggm import graphics
 
     tasks.glacier_masks(gdir)
@@ -416,4 +397,3 @@ if __name__ == '__main__':
 
     graphics.plot_centerlines(gdir)
     plt.show()
-    '''
