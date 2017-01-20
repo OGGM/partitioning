@@ -393,7 +393,7 @@ if __name__ == '__main__':
     #entity = gpd.GeoDataFrame.from_file(get_demo_file('Hintereisferner.shp')).iloc[0]
     #gdir = oggm.GlacierDirectory(entity, base_dir=base_dir)
     for dir in os.listdir(base_dir):
-        if dir.startswith('RGI50-11.03418'):
+        if dir.startswith('RGI50-11.02942'):
             gdir=oggm.GlacierDirectory(dir,base_dir=base_dir)
             entity = gpd.GeoDataFrame.from_file(gdir.dir+'/outlines.shp').iloc[0]
             print gdir.dir
