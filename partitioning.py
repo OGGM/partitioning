@@ -255,6 +255,7 @@ def merge_flowsheds(P_glac_dir,watershed_dir,m):
             glacier_id.update({'glacier'+str(glacier_n):{polygon_id}})
             glacier_poly.update({'glacier' + str(glacier_n): polygon})
             glacier_n=glacier_n+1
+
     #add regions, where no watersheds exists to glaciers   --> these are watersheds from pour points inside the glacier region
     #TODO: --> fill pits at DEM should avoid this, but function in pygeoprocessing is not working yet
     total_glacier=MultiPolygon()
