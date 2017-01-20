@@ -49,7 +49,7 @@ def clip(input_dem,shp,buffersize,out_name):
     return output_dem
 
 def compactness(polygon):
-    coord=np.array(polygon.boundary.coords)
+    coord=np.array(polygon.exterior.coords)
     #calculate max distance(perimeter)
     max_dist=Point(coord[np.argmin(coord[:,1])]).distance(Point(coord[np.argmax(coord[:,1])]))
     x_dist=Point(coord[np.argmin(coord[:,0])]).distance(Point(coord[np.argmax(coord[:,0])]))
@@ -59,8 +59,6 @@ def compactness(polygon):
         return True
     else:
         return False
-
-
 def flowacc(input_dem):
         
     new_flow_direction_map_uri =os.path.dirname(input_dem)+'/flow_dir.tif'
@@ -162,11 +160,11 @@ def flowsheds(input_dem):
                 shutil.rmtree(dir)
 
                 i=i+1
-    return [os.path.dirname(input_dem)+ '/P_glac.shp',os.path.dirname(input_dem)+'/all_watershed.shp']
+    return [os.path.dirname(input_dem)+ '/P_glac.shp',os.path.dirname(input_dem)+'/all_watershed.shp',m]
 
 def gutter(masked_dem, depth):
 
-    gutter_shp = os.path.dirname(input_shp) + '/gutter.shp'
+    gutter_shp = os.path.dirname(masked_dem) + '/gutter.shp'
 
     with fiona.open(gutter_shp, "w", "ESRI Shapefile", schema, crs) as output:
         output.write({'properties': outlines['properties'],
@@ -182,7 +180,7 @@ def gutter(masked_dem, depth):
                 dest.write_band(1, mask_band)
     return gutter_dem
 
-def merge_flowsheds(P_glac_dir,watershed_dir):
+def merge_flowsheds(P_glac_dir,watershed_dir,m):
 
     pp_merged={}
     all_poly_glac={}
@@ -194,6 +192,8 @@ def merge_flowsheds(P_glac_dir,watershed_dir):
         silver_poly_check={}
         watershed_out=Polygon()
         for shed in watersheds:
+            if not shape(shed['geometry']).is_valid:
+                shed['geometry']=shape(shed['geometry']).buffer(0)
             watershed_out=watershed_out.union(shape(shed['geometry']))
             shed_status=False
             with fiona.open(P_glac_dir, "r") as P_glac:
@@ -206,19 +206,36 @@ def merge_flowsheds(P_glac_dir,watershed_dir):
                         else:
                             pp_merged.update({'PP_'+str(P['properties']['id']):{shed['properties']['id']}})
                             all_poly_glac.update({'PP_'+str(P['properties']['id']):shape(shed['geometry'])})
+                        #print all_poly_glac['PP_'+str(P['properties']['id'])].type
             #if shed don't overlay with any P_glac
             if shed_status is False :
                 silver_poly_check.update({shed['properties']['id']:shape(shed['geometry'])})
 
 
-    #merge overlaps together
+    #merge P_glac-overlaps together
     glacier_n=0
     glacier_id={}
     glacier_poly={}
     for PP in pp_merged:
         pp_status=False
+
+        if all_poly_glac[PP].type == 'MultiPolygon':
+            p=Polygon()
+            max_area=0
+            for pol in all_poly_glac[PP]:
+                if pol.area > max_area:
+                    if not max_area == 0:
+                        m=m+1
+                        silver_poly_check.update({m:p})
+                    p=pol
+                    max_area=p.area
+                else:
+                    m = m + 1
+                    silver_poly_check.update({m: p})
+            all_poly_glac[PP]=p
+
         for glac in glacier_id:
-            if len(pp_merged[PP].intersection(glacier_id[glac])) is not 0:
+            if len(pp_merged[PP].intersection(glacier_id[glac])) is not 0 :
                 glacier_id[glac]=pp_merged[PP].union(glacier_id[glac])
                 glacier_poly[glac] = all_poly_glac[PP].union(shape(glacier_poly[glac]))
                 pp_status=True
@@ -244,8 +261,8 @@ def merge_flowsheds(P_glac_dir,watershed_dir):
     for glacier in glacier_poly:
         total_glacier=shape(total_glacier).union(shape(glacier_poly[glacier]))
 
-    for polygon in shape(outlines['geometry']).difference(total_glacier.buffer(0.01)).buffer(-0.1):
-        glacier_poly=merge_sliver_poly(glacier_poly,polygon.buffer(0.2))
+    for polygon in shape(outlines['geometry']).difference(total_glacier.buffer(0.01)).buffer(-0.2):
+        glacier_poly=merge_sliver_poly(glacier_poly,polygon.buffer(0.3))
 
     #repair overlapping glaciers
     from itertools import combinations
@@ -286,6 +303,7 @@ def merge_flowsheds(P_glac_dir,watershed_dir):
                     else:
                         glacier_poly[key[1]] = shape(glacier_poly[key[1]]).difference(glacier_poly[key[0]])
 
+
     #check if final_glaciers are not sliver polygon:
     keys=glacier_poly.keys()
     for glac_id in keys:
@@ -297,6 +315,7 @@ def merge_flowsheds(P_glac_dir,watershed_dir):
 
     i=1
     for pol in glacier_poly:
+
         if not os.path.isdir(os.path.dirname(P_glac_dir)+'/divide_'+str(i).zfill(2)):
             os.mkdir(os.path.dirname(P_glac_dir)+'/divide_'+str(i).zfill(2))
         with fiona.open(os.path.dirname(P_glac_dir)+'/divide_'+str(i).zfill(2)+'/outlines.shp',"w", "ESRI Shapefile",schema, crs) as gla:
@@ -307,7 +326,7 @@ def merge_flowsheds(P_glac_dir,watershed_dir):
                 outlines['properties']['Area'] = glacier_poly[pol].area / 1000000
             gla.write({'properties': outlines['properties'],'geometry': mapping(glacier_poly[pol])})
         i=i+1
-    print 'glaciers:',i-1
+    return i-1
 
 def merge_sliver_poly(glacier_poly,polygon):
     max_boundary = 0
@@ -336,6 +355,13 @@ def dividing_glaciers(input_dem,input_shp):
         outlines=shapefile.next()
         crs=shapefile.crs
         schema=shapefile.schema
+        if not shape(outlines['geometry']).is_valid:
+            outlines['geometry']=shape(outlines['geometry']).buffer(0)
+
+    # get pixel size
+    with rasterio.open(input_dem) as dem:
+        global pixelsize
+        pixelsize = int(dem.transform[1])
 
     #clip dem along buffer1
     masked_dem=clip(input_dem,input_shp,pixelsize*4,'masked')
@@ -345,27 +371,28 @@ def dividing_glaciers(input_dem,input_shp):
     #****************************** Identification of pour points and flowshed calculation *****************************
     flow_gutter = flowacc(gutter_dem)
     # flowshed calculation
-    [P_glac, watersheds] = flowsheds(flow_gutter)
+    [P_glac, watersheds,m] = flowsheds(flow_gutter)
 
     #*************** Allocation of flowsheds to individual glaciers & Identification of sliver polygons ****************
-    merge_flowsheds(P_glac, watersheds)
+    no_glaciers=merge_flowsheds(P_glac, watersheds,m)
 
     # delete files which are not needed anymore
     for file in os.listdir(os.path.dirname(input_shp)):
-        for word in ['all', 'P_glac','flow', 'gutter', 'masked']:
+        for word in [ 'P_glac','flow', 'gutter', 'masked']:
             if file.startswith(word):
                 os.remove(os.path.dirname(input_shp) + '/' + file)
+    return no_glaciers
 
 
 if __name__ == '__main__':
     import time
     start0=time.time()
     cfg.initialize()
-    base_dir = os.path.join(os.path.expanduser('/home/juliaeis/Dokumente/OGGM/work_dir'), 'GlacierDir_Example')
+    base_dir = '/home/juliaeis/Dokumente/OGGM/work_dir/CentralEurope3000m+'
     #entity = gpd.GeoDataFrame.from_file(get_demo_file('Hintereisferner.shp')).iloc[0]
     #gdir = oggm.GlacierDirectory(entity, base_dir=base_dir)
     for dir in os.listdir(base_dir):
-        if dir.startswith('RGI50'):
+        if dir.startswith('RGI50-11.03418'):
             gdir=oggm.GlacierDirectory(dir,base_dir=base_dir)
             entity = gpd.GeoDataFrame.from_file(gdir.dir+'/outlines.shp').iloc[0]
             print gdir.dir
@@ -386,7 +413,7 @@ if __name__ == '__main__':
             dividing_glaciers(input_dem, input_shp)
 
 
-    print time.time()-start0
+    print 'time for dividing:', time.time()-start0
 
     #test if it works
 
