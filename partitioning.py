@@ -209,7 +209,12 @@ def merge_flowsheds(P_glac_dir,watershed_dir,m):
                         #print all_poly_glac['PP_'+str(P['properties']['id'])].type
             #if shed don't overlay with any P_glac
             if shed_status is False :
-                silver_poly_check.update({shed['properties']['id']:shape(shed['geometry'])})
+                if shape(shed['geometry']).type =='MultiPolygon':
+                    for poly in shape(shed['geometry']):
+                        silver_poly_check.update({m: shape(poly)})
+                        m=m+1
+                else:
+                    silver_poly_check.update({shed['properties']['id']:shape(shed['geometry'])})
 
 
     #merge P_glac-overlaps together
@@ -235,7 +240,7 @@ def merge_flowsheds(P_glac_dir,watershed_dir,m):
             all_poly_glac[PP]=p
 
         for glac in glacier_id:
-            if len(pp_merged[PP].intersection(glacier_id[glac])) is not 0 :
+            if len(pp_merged[PP].intersection(glacier_id[glac])) is not 0 and all_poly_glac[PP].union(shape(glacier_poly[glac])).type =='Polygon':
                 glacier_id[glac]=pp_merged[PP].union(glacier_id[glac])
                 glacier_poly[glac] = all_poly_glac[PP].union(shape(glacier_poly[glac]))
                 pp_status=True
@@ -312,8 +317,6 @@ def merge_flowsheds(P_glac_dir,watershed_dir,m):
         if glac.area < 100000 or (glac.area < 200000 and compactness(glac)):
             del glacier_poly[glac_id]
             glacier_poly=merge_sliver_poly(glacier_poly,glac)
-
-
     i=1
     for pol in glacier_poly:
 
@@ -379,7 +382,7 @@ def dividing_glaciers(input_dem,input_shp):
 
     # delete files which are not needed anymore
     for file in os.listdir(os.path.dirname(input_shp)):
-        for word in [ 'P_glac','flow', 'gutter', 'masked']:
+        for word in ['all' ,'P_glac','flow', 'gutter', 'masked']:
             if file.startswith(word):
                 os.remove(os.path.dirname(input_shp) + '/' + file)
     return no_glaciers
@@ -393,7 +396,7 @@ if __name__ == '__main__':
     #entity = gpd.GeoDataFrame.from_file(get_demo_file('Hintereisferner.shp')).iloc[0]
     #gdir = oggm.GlacierDirectory(entity, base_dir=base_dir)
     for dir in os.listdir(base_dir):
-        if dir.startswith('RGI50-11.02942'):
+        if dir.startswith('RGI50-11.03080'):
             gdir=oggm.GlacierDirectory(dir,base_dir=base_dir)
             entity = gpd.GeoDataFrame.from_file(gdir.dir+'/outlines.shp').iloc[0]
             print gdir.dir
@@ -422,7 +425,7 @@ if __name__ == '__main__':
 
     tasks.glacier_masks(gdir)
     tasks.compute_centerlines(gdir)
-    tasks.compute_downstream_lines(gdir)
+    #tasks.compute_downstream_lines(gdir)
     tasks.catchment_area(gdir)
     tasks.initialize_flowlines(gdir)
     tasks.catchment_width_geom(gdir)
