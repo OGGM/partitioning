@@ -438,7 +438,6 @@ def dividing_glaciers(input_dem,input_shp):
     # flowshed calculation
     [P_glac, watersheds,m] = flowsheds(flow_gutter)
 
-
     #*************** Allocation of flowsheds to individual glaciers & Identification of sliver polygons ****************
     no_glaciers=merge_flowsheds(P_glac, watersheds,m)
 
