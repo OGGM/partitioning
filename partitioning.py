@@ -304,71 +304,35 @@ def merge_flowsheds(P_glac_dir,watershed_dir,m):
 
                         del glacier_poly[key[1]]
                     elif shape(glacier_poly[key[0]]).area > shape(glacier_poly[key[1]]).area:
-                        glacier_poly[key[1]] = (shape(glacier_poly[key[1]]).difference(glacier_poly[key[0]]).buffer(-0.1)).buffer(0.1)
+                        glacier_poly[key[1]] = (shape(glacier_poly[key[1]]).difference(glacier_poly[key[0]]))
                         if glacier_poly[key[1]].type is 'MultiPolygon':
                             poly_max = Polygon()
                             for poly in glacier_poly[key[1]]:
                                 if poly.area > poly_max.area:
                                     if not poly_max.is_empty:
                                         glacier_poly[key[1]] = shape(glacier_poly[key[1]]).difference(poly_max)
-                                        glacier_poly=merge_sliver_poly(glacier_poly, poly.buffer(0.1))
-                                        #glacier_poly[key[0]] = shape(glacier_poly[key[0]]).union(poly_max.buffer(0.1))
+                                        glacier_poly=merge_sliver_poly(glacier_poly, poly_max.buffer(0.1))
                                     poly_max = poly
                                 else:
                                     glacier_poly[key[1]] = shape(glacier_poly[key[1]]).difference(poly)
                                     glacier_poly =merge_sliver_poly(glacier_poly, poly.buffer(0.1))
-                                    #glacier_poly[key[0]] = shape(glacier_poly[key[0]]).union(poly.buffer(0.1))
-                        '''
-                        if (shape(glacier_poly[key[1]]).difference(glacier_poly[key[0]]).buffer(-0.1)).buffer(0.1).type is 'Polygon':
-                            glacier_poly[key[1]] = (shape(glacier_poly[key[1]]).difference(glacier_poly[key[0]]).buffer(-0.1)).buffer(0.1)
-
-                        elif (shape(glacier_poly[key[0]]).difference(glacier_poly[key[1]]).buffer(-0.1)).buffer(0.1).type is 'Polygon':
-                            glacier_poly[key[0]] = (shape(glacier_poly[key[0]]).difference(glacier_poly[key[1]]).buffer(-0.1)).buffer(0.1)
-
-                        else:
-                            print (shape(glacier_poly[key[0]]).difference(glacier_poly[key[1]]).buffer(-0.1)).buffer(0.1).type
-                        '''
 
                     else:
-                        #print'vorher',glacier_poly[key[1]].type
-                        glacier_poly[key[0]] = (shape(glacier_poly[key[0]].buffer(0)).difference(glacier_poly[key[1]]).buffer(-0.1)).buffer(0.1)
+                        glacier_poly[key[0]] = (shape(glacier_poly[key[0]].buffer(0)).difference(glacier_poly[key[1]]))
                         #print glacier_poly[key[1]].type
                         if glacier_poly[key[0]].type is 'MultiPolygon':
                             poly_max=Polygon()
                             for poly in glacier_poly[key[0]]:
-                                poly.area
                                 if poly.area>poly_max.area:
-
                                     if not poly_max.is_empty :
                                         glacier_poly[key[0]] = shape(glacier_poly[key[0]]).difference(poly_max)
-                                        glacier_poly =merge_sliver_poly(glacier_poly, poly.buffer(0.1))
-                                        #glacier_poly[key[1]] = shape(glacier_poly[key[1]]).union(poly_max.buffer(0.1))
+                                        glacier_poly =merge_sliver_poly(glacier_poly, poly_max.buffer(0.1))
                                     poly_max=poly
                                 else:
                                     glacier_poly[key[0]] = shape(glacier_poly[key[0]]).difference(poly)
                                     #print shape(glacier_poly[key[1]]).intersection(poly.buffer(0.1))
                                     glacier_poly =merge_sliver_poly(glacier_poly, poly.buffer(0.1))
-
                             #print key[0] ,glacier_poly[key[0]].type, key[1], glacier_poly[key[1]].type
-
-
-
-                        '''
-                        #print key[0],key[1],shape(glacier_poly[key[0]]).difference(glacier_poly[key[1]]).type,shape(glacier_poly[key[1]]).difference(glacier_poly[key[0]]).type
-                        if (shape(glacier_poly[key[0]]).difference(glacier_poly[key[1]]).buffer(-0.1)).buffer(0.1).type is 'Polygon':
-                            glacier_poly[key[0]] = (shape(glacier_poly[key[0]]).difference(glacier_poly[key[1]]).buffer(-0.1)).buffer(0.1)
-                        elif (shape(glacier_poly[key[1]]).difference(glacier_poly[key[0]]).buffer(-0.1)).buffer(0.1).type =='Polygon':
-                            glacier_poly[key[1]] = (shape(glacier_poly[key[1]]).difference(glacier_poly[key[0]]).buffer(-0.1)).buffer(0.1)
-                        else:
-                            print (shape(glacier_poly[key[0]]).difference(glacier_poly[key[1]]).buffer(-0.1)).buffer(0.1).type
-                            for pol in (shape(glacier_poly[key[0]]).difference(glacier_poly[key[1]]).buffer(-0.1)).buffer(0.1):
-                                print pol.type
-                                with fiona.open(os.path.dirname(P_glac_dir) + '/'+key[1]+key[0]+'.shp', "w", "ESRI Shapefile",
-                                                schema, crs) as mul:
-                                    s=outlines['properties']
-                                    s['Area']=pol.area
-                                    mul.write({'properties': s, 'geometry': mapping(pol)})
-                        '''
 
     #check if final_glaciers are not sliver polygon:
     keys=glacier_poly.keys()
@@ -378,6 +342,7 @@ def merge_flowsheds(P_glac_dir,watershed_dir,m):
             del glacier_poly[glac_id]
             glacier_poly=merge_sliver_poly(glacier_poly,glac)
     i=1
+    k=True
     for pol in glacier_poly:
 
         if not os.path.isdir(os.path.dirname(P_glac_dir)+'/divide_'+str(i).zfill(2)):
@@ -388,10 +353,11 @@ def merge_flowsheds(P_glac_dir,watershed_dir,m):
                 outlines['properties']['AREA']=glacier_poly[pol].area/1000000
             elif 'Area' in schema['properties'].keys() :
                 outlines['properties']['Area'] = glacier_poly[pol].area / 1000000
-            print 'glacier_type',str(i),glacier_poly[pol].type
+            if glacier_poly[pol].type != 'Polygon':
+                k=False
             gla.write({'properties': outlines['properties'],'geometry': mapping(glacier_poly[pol])})
         i=i+1
-    return i-1
+    return i-1,k
 
 def merge_sliver_poly(glacier_poly,polygon):
     max_boundary = 0
@@ -439,14 +405,14 @@ def dividing_glaciers(input_dem,input_shp):
     [P_glac, watersheds,m] = flowsheds(flow_gutter)
 
     #*************** Allocation of flowsheds to individual glaciers & Identification of sliver polygons ****************
-    no_glaciers=merge_flowsheds(P_glac, watersheds,m)
+    no_glaciers,all_polygon=merge_flowsheds(P_glac, watersheds,m)
 
     # delete files which are not needed anymore
     for file in os.listdir(os.path.dirname(input_shp)):
         for word in ['P_glac','flow', 'gutter', 'masked']:
             if file.startswith(word):
                 os.remove(os.path.dirname(input_shp) + '/' + file)
-    return no_glaciers
+    return no_glaciers,all_polygon
 
 
 if __name__ == '__main__':
@@ -457,8 +423,8 @@ if __name__ == '__main__':
     #entity = gpd.GeoDataFrame.from_file(get_demo_file('Hintereisferner.shp')).iloc[0]
     #gdir = oggm.GlacierDirectory(entity, base_dir=base_dir)
     for dir in os.listdir(base_dir):
-        if dir.startswith('RGI50-11.01328'):
-        #if dir in ['RGI50-11.01144',''RGI50-11.01328','RGI50-11.02460','RGI50-11.02755','RGI50-11.02890'
+        if dir.startswith('RGI50-11.00887'):
+        #if dir in ['RGI50-11.01144','RGI50-11.02460','RGI50-11.02755']:
 
             gdir=oggm.GlacierDirectory(dir,base_dir=base_dir)
             entity = gpd.GeoDataFrame.from_file(gdir.dir+'/outlines.shp').iloc[0]
@@ -472,29 +438,28 @@ if __name__ == '__main__':
             ###################preprocessing########################
             input_shp =gdir.get_filepath('outlines',div_id=0)
             input_dem=gdir.get_filepath('dem',div_id=0)
-            #f = open(base_dir + '/summary.txt', 'w')
+
             #get pixel size
             with rasterio.open(input_dem) as dem:
                 global pixelsize
                 pixelsize=int(dem.transform[1])
-            #try:
-                dividing_glaciers(input_dem, input_shp)
-                #f.write(str(dir)+'time for dividing:'+ str(time.time() - start0)+'\n')
-            #except:
-                #f.write(str(dir)+'dividing failed\n')
 
-                #test if it works
+                n,k=dividing_glaciers(input_dem, input_shp)
 
-                from oggm import graphics
+            #test if it works
 
-                tasks.glacier_masks(gdir)
-                tasks.compute_centerlines(gdir)
-                #tasks.compute_downstream_lines(gdir)
-                tasks.catchment_area(gdir)
-                tasks.initialize_flowlines(gdir)
-                tasks.catchment_width_geom(gdir)
 
-                graphics.plot_centerlines(gdir)
-                plt.show()
+            from oggm import graphics
+
+            tasks.glacier_masks(gdir)
+            tasks.compute_centerlines(gdir)
+            #tasks.compute_downstream_lines(gdir)
+            tasks.catchment_area(gdir)
+            tasks.initialize_flowlines(gdir)
+            tasks.catchment_width_geom(gdir)
+
+            graphics.plot_centerlines(gdir)
+            plt.show()
+
 
 
