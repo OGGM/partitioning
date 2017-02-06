@@ -305,6 +305,7 @@ def merge_flowsheds(P_glac_dir,watershed_dir):
             del glacier_poly[glac_id]
             glacier_poly = merge_sliver_poly(glacier_poly, glac)
 
+
     i = 1
     k = True
     for P in P_poly:
