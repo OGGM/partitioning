@@ -81,8 +81,8 @@ def flowsheds(input_dem):
     nan=np.where(np.isnan(im))
     #set nan to zero
     im[nan]=0
-    #calculate maxima   TODO: changed or Colmbia glacier , vorher min_distance=4
-    coordinates = peak_local_max(im, min_distance=80)
+    #calculate maxima
+    coordinates = peak_local_max(im, min_distance=4)
     #transform maxima to (flowaccumulation,coordinates)
     new_coord=[]
     dtype=[('flowaccumulation',float),('coordinates',np.float64, (2,))]
@@ -169,9 +169,7 @@ def gutter(masked_dem, depth):
     gutter_shp = os.path.dirname(masked_dem) + '/gutter.shp'
 
     with fiona.open(gutter_shp, "w", "ESRI Shapefile", schema, crs) as output:
-        output.write({'properties': outlines['properties'],
-                      'geometry': mapping(shape(outlines['geometry']).buffer(pixelsize*2).difference(shape(outlines['geometry']).buffer(pixelsize)))})
-
+        output.write({'properties': outlines['properties'],'geometry': mapping(shape(outlines['geometry']).buffer(pixelsize*2).difference(shape(outlines['geometry']).buffer(pixelsize)))})
     gutter_dem = clip(masked_dem, gutter_shp,0, 'gutter')
 
     with rasterio.open(masked_dem) as src1:
@@ -226,9 +224,11 @@ def merge_flowsheds(P_glac_dir,watershed_dir):
             glacier_n = glacier_n + 1
             total_glacier=total_glacier.union(shed)
     print len(glacier_poly), len(sliver_poly)
-
-    for gap in shape(outlines['geometry']).difference(total_glacier.buffer(0.01)).buffer(-0.2):
-        sliver_poly.append(gap.buffer(0.3))
+    if shape(outlines['geometry']).difference(total_glacier.buffer(0.01)).buffer(-0.2).type == 'Polygon':
+        sliver_poly.append(shape(outlines['geometry']).difference(total_glacier.buffer(0.01)).buffer(-0.2).buffer(0.3))
+    else:
+        for gap in shape(outlines['geometry']).difference(total_glacier.buffer(0.01)).buffer(-0.2):
+            sliver_poly.append(gap.buffer(0.3))
 
     for polygon in sliver_poly:
         glacier_poly = merge_sliver_poly(glacier_poly, polygon)
@@ -314,7 +314,7 @@ def merge_flowsheds(P_glac_dir,watershed_dir):
             if P.intersects(glacier_poly[name]):
                 no_merge.append(name)
         if len(no_merge) >1:
-            glacier_poly[no_merge[0]] =cascaded_union([glacier_poly[x] for x in no_merge])
+            glacier_poly[no_merge[0]] =cascaded_union([glacier_poly[x].buffer(0.1) for x in no_merge])
         for glacier in no_merge[1::]:
             glacier_poly.pop(glacier)
 
@@ -544,6 +544,7 @@ def dividing_glaciers(input_dem,input_shp):
     with fiona.open(input_shp,'r') as shapefile:
         outlines=shapefile.next()
         crs=shapefile.crs
+        print crs
         schema=shapefile.schema
         if not shape(outlines['geometry']).is_valid:
             outlines['geometry']=shape(outlines['geometry']).buffer(0)
@@ -554,7 +555,7 @@ def dividing_glaciers(input_dem,input_shp):
         pixelsize = int(dem.transform[1])
 
     #clip dem along buffer1
-    masked_dem=clip(input_dem,input_shp,pixelsize*4,'masked')
+    masked_dem=clip(input_dem,input_shp,4*pixelsize,'masked')
     #create gutter
     gutter_dem=gutter(masked_dem,100)
 
@@ -581,13 +582,15 @@ if __name__ == '__main__':
     from oggm import graphics
     start0=time.time()
     cfg.initialize()
-    cfg.PATHS['dem_file'] = os.path.join('/home/juliaeis/Dokumente/OGGM/work_dir/Alaska/dem.tif')
-    base_dir = '/home/juliaeis/Dokumente/OGGM/work_dir/Alaska'
+    #cfg.PATHS['dem_file'] = os.path.join('/home/juliaeis/Dokumente/OGGM/work_dir/Alaska/dem.tif')
 
+    base_dir = '/home/juliaeis/Dokumente/OGGM/work_dir/CentralEurope3000m+'
+    with fiona.open(base_dir+'/outlines.shp','r') as c:
+        print 'c',c.crs
     #gdir = oggm.GlacierDirectory(entity, base_dir=base_dir)
     #f=open(base_dir+'/divided_glaciers.txt','w')
     for dir in os.listdir(base_dir):
-        if dir.startswith('RGI50-01.10689'):
+        if dir.startswith('RGI50-11.01144'):
         #if dir in ['RGI50-11.01144','RGI50-11.02460','RGI50-11.02755']:
             gdir = oggm.GlacierDirectory(dir, base_dir=base_dir)
             print gdir.dir
@@ -638,6 +641,7 @@ if __name__ == '__main__':
             ax1 = fig.add_subplot(1, 2, 2)
 
             graphics.plot_centerlines(gdir,ax=ax1)
+            plt.savefig(base_dir+'/new_Plots/'+dir+'.png')
             plt.show()
             '''
     #f.closed
