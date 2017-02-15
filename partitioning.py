@@ -5,14 +5,7 @@ Created on 31.10.2016
 '''
 
 import os
-import geopandas as gpd
 import numpy as np
-from salem.utils import get_demo_file
-import oggm
-from oggm import tasks
-import oggm.cfg as cfg
-import matplotlib.pyplot as plt
-
 import math
 import fiona
 import shutil
@@ -135,7 +128,7 @@ def flowsheds(input_dem):
                 with fiona.open(dir+'/watershed_out.shp', "r", "ESRI Shapefile") as watershed:
                     w=watershed.next()
                 #cut watershed with outlines
-                w['geometry']=mapping(shape(outlines['geometry']).intersection(shape(w['geometry'])))
+                w['geometry']=mapping(shape(outlines['geometry']).intersection(shape(w['geometry']).buffer(0)))
                 w['properties']['id']=i
 
                 if w['geometry']['type'] is 'Polygon':
@@ -206,6 +199,12 @@ def merge_flowsheds(P_glac_dir,watershed_dir):
                 if shape(P['geometry']).intersects(shed):
                     to_merge.append(i)
                     watershed[to_merge[0]]=shape(watershed[to_merge[0]]).union(shed)
+                    if watershed[to_merge[0]].type not in ['Polygon','MultiPolygon']:
+                        new=MultiPolygon()
+                        for g in watershed[to_merge[0]]:
+                            if g.type in ['Polygon','MultiPolygon']:
+                                new=new.union(g)
+                        watershed[to_merge[0]]=new
             for shed in [watershed[x] for x in to_merge[1::]]:
                 watershed.remove(shed)
 
@@ -530,10 +529,19 @@ def merge_sliver_poly(glacier_poly,polygon):
     return glacier_poly
 
 def p_glac_radius(a, b, F):
+    #test
+
+
+    if a * (F ** b) +(pixelsize-40)*1.5 < 3500:
+        return a * (F ** b) +(pixelsize-40)*1.5
+    else:
+        return 3500
+    '''
     if a * (F ** b)*(float(pixelsize)/40) < 3500:
         return a * (F ** b)*(float(pixelsize)/40)
     else:
         return 3500
+   '''
 
 def dividing_glaciers(input_dem,input_shp):
     #*************************************************** preprocessing *************************************************
@@ -579,71 +587,27 @@ if __name__ == '__main__':
     import time
     import shutil
     import salem
-    from oggm import graphics
+
     start0=time.time()
-    cfg.initialize()
-    #cfg.PATHS['dem_file'] = os.path.join('/home/juliaeis/Dokumente/OGGM/work_dir/Alaska/dem.tif')
+    base_dir = '/home/juliaeis/Dokumente/OGGM/work_dir/CentralEurope/2000-3000'
 
-    base_dir = '/home/juliaeis/Dokumente/OGGM/work_dir/CentralEurope3000m+'
-    with fiona.open(base_dir+'/outlines.shp','r') as c:
-        print 'c',c.crs
-    #gdir = oggm.GlacierDirectory(entity, base_dir=base_dir)
-    #f=open(base_dir+'/divided_glaciers.txt','w')
-    for dir in os.listdir(base_dir):
-        if dir.startswith('RGI50-11.01144'):
+    for dir in os.listdir(base_dir+'/per_glacier'):
+        if dir.startswith('RGI50-11.03728'):
         #if dir in ['RGI50-11.01144','RGI50-11.02460','RGI50-11.02755']:
-            gdir = oggm.GlacierDirectory(dir, base_dir=base_dir)
-            print gdir.dir
-            #check if required files exists
-            if gdir.has_file('outlines',div_id=0) and gdir.has_file('dem', div_id=0):
-                pass
-            else:
-                rgidf = salem.read_shapefile(gdir.dir+'/outlines.shp', cached=True)
-                tasks.define_glacier_region(gdir,entity=rgidf)
 
-            #tasks.glacier_masks(gdir)
             ###################preprocessing########################
-            input_shp =gdir.get_filepath('outlines',div_id=0)
-            input_dem=gdir.get_filepath('dem',div_id=0)
-            for fol in os.listdir(gdir.dir):
+            input_shp =base_dir+'/per_glacier/'+dir+'/outlines.shp'
+            input_dem=os.path.dirname(input_shp)+'/dem.tif'
+            input2_dem=os.path.dirname(input_shp)+'/dem2.tif'
+            os.system('gdalwarp -tr 40 40 -r cubicspline -overwrite ' + input_dem + ' ' + input2_dem)
+            for fol in os.listdir(os.path.dirname(input_shp)):
                 if fol.startswith('divide'):
-                    shutil.rmtree(gdir.dir+'/'+fol)
-            os.makedirs(gdir.dir+'/divide_01')
-            for file in [input_shp,gdir.dir+'/outlines.shx',gdir.dir+'/outlines.dbf']:
-                shutil.copy(file,gdir.dir+'/divide_01')
+                    shutil.rmtree(os.path.dirname(input_shp)+'/'+fol)
+            os.makedirs(base_dir+'/per_glacier/'+dir+'/divide_01')
+            for file in [input_shp,os.path.dirname(input_shp)+'/outlines.shx',os.path.dirname(input_shp)+'/outlines.dbf']:
+                shutil.copy(file,os.path.dirname(input_shp)+'/divide_01')
 
-            #plot figure before partitioning
-            '''
-            tasks.glacier_masks(gdir)
-            tasks.compute_centerlines(gdir)
-            fig = plt.figure(figsize=(20,10))
-            ax0 = fig.add_subplot(1, 2, 1)
-            graphics.plot_centerlines(gdir, ax=ax0)
-            '''
-            #get pixel size
-            with rasterio.open(input_dem) as dem:
-                global pixelsize
-                pixelsize=int(dem.transform[1])
-                print pixelsize
+            n,k=dividing_glaciers(input2_dem, input_shp)
 
-            n,k=dividing_glaciers(input_dem, input_shp)
-            #if n is not 1:
-                #f.write(dir+' : '+str(n)+'\n')
-
-            '''
-            #test if it works
-            tasks.glacier_masks(gdir)
-            tasks.compute_centerlines(gdir)
-            #tasks.compute_downstream_lines(gdir)
-            tasks.catchment_area(gdir)
-            tasks.initialize_flowlines(gdir)
-            tasks.catchment_width_geom(gdir)
-            ax1 = fig.add_subplot(1, 2, 2)
-
-            graphics.plot_centerlines(gdir,ax=ax1)
-            plt.savefig(base_dir+'/new_Plots/'+dir+'.png')
-            plt.show()
-            '''
-    #f.closed
 
 
