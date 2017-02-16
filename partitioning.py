@@ -1,8 +1,3 @@
-'''
-Created on 31.10.2016
-
-@author: juliaeis
-'''
 
 import os
 import numpy as np
@@ -20,7 +15,7 @@ from shapely.geometry import Point,Polygon,MultiPolygon
 from shapely.ops import cascaded_union
 
 def clip(input_dem,shp,buffersize,out_name):
-        
+
     output_dem=os.path.dirname(input_dem)+'/'+out_name+'.tif'
     if os.path.basename(shp) == 'outlines.shp':
         geoms=[mapping(shape(outlines['geometry']).buffer(buffersize))]
@@ -32,7 +27,7 @@ def clip(input_dem,shp,buffersize,out_name):
         #out_image, out_transform = mask(src, geoms,nodata=np.nan, crop=False)
         out_image, out_transform = mask(src,geoms , nodata=np.nan, crop=False)
         out_meta = src.meta.copy()
-    
+
     out_meta.update({"driver": "GTiff",
                      "height": out_image.shape[1],
                      "width": out_image.shape[2],
@@ -54,9 +49,9 @@ def compactness(polygon):
     else:
         return False
 def flowacc(input_dem):
-        
+
     new_flow_direction_map_uri =os.path.dirname(input_dem)+'/flow_dir.tif'
-    new_flow_map_accumulation_uri = os.path.dirname(input_dem)+'/flow_accumulation.tif'   
+    new_flow_map_accumulation_uri = os.path.dirname(input_dem)+'/flow_accumulation.tif'
     #calculate flow direction
     routing.flow_direction_d_inf(input_dem, new_flow_direction_map_uri)
     #calculate flow_accumulation
@@ -122,7 +117,7 @@ def flowsheds(input_dem):
                     output.write({'properties': {'flow_acc':coord['flowaccumulation']},'geometry': {'type':'Point','coordinates':coord['coordinates']}})
 
                 #calculate watershed for pour point
-                routing.delineate_watershed(os.path.dirname(input_dem)+'/gutter.tif',dir+'/pour_point.shp',0,100, dir+'/watershed_out.shp', dir+'/snapped_outlet_points_uri.shp', dir+'/stream_out_uri.tif')
+                routing.delineate_watershed(os.path.dirname(input_dem)+'/gutter2.tif',dir+'/pour_point.shp',0,100, dir+'/watershed_out.shp', dir+'/snapped_outlet_points_uri.shp', dir+'/stream_out_uri.tif')
 
                 #add watershed polygon to watershed_all.shp
                 with fiona.open(dir+'/watershed_out.shp', "r", "ESRI Shapefile") as watershed:
@@ -164,14 +159,14 @@ def gutter(masked_dem, depth):
     with fiona.open(gutter_shp, "w", "ESRI Shapefile", schema, crs) as output:
         output.write({'properties': outlines['properties'],'geometry': mapping(shape(outlines['geometry']).buffer(pixelsize*2).difference(shape(outlines['geometry']).buffer(pixelsize)))})
     gutter_dem = clip(masked_dem, gutter_shp,0, 'gutter')
-
+    gutter2_dem=os.path.dirname(gutter_dem)+'/gutter2.tif'
     with rasterio.open(masked_dem) as src1:
         mask_band = np.array(src1.read(1))
         with rasterio.open(gutter_dem) as src:
             mask_band = np.float32(mask_band - depth * (~np.isnan(np.array(src.read(1)))))
-            with rasterio.open(gutter_dem, "w", **src.meta.copy()) as dest:
-                dest.write_band(1, mask_band)
-    return gutter_dem
+        with rasterio.open(gutter2_dem, "w", **src.meta.copy()) as dest:
+            dest.write_band(1, mask_band)
+    return gutter2_dem
 
 def merge_flowsheds(P_glac_dir,watershed_dir):
     import time
@@ -586,10 +581,10 @@ def dividing_glaciers(input_dem,input_shp):
 if __name__ == '__main__':
     import time
     import shutil
-    import salem
 
     start0=time.time()
-    base_dir = '/home/juliaeis/Dokumente/OGGM/work_dir/CentralEurope/2000-3000'
+    #base_dir = '/home/juliaeis/Dokumente/OGGM/work_dir/CentralEurope/2000-3000'
+    base_dir='E:\\partitioning\\CentralEurope\\2000-3000'
 
     for dir in os.listdir(base_dir+'/per_glacier'):
         if dir.startswith('RGI50-11.03728'):
@@ -608,6 +603,3 @@ if __name__ == '__main__':
                 shutil.copy(file,os.path.dirname(input_shp)+'/divide_01')
 
             n,k=dividing_glaciers(input2_dem, input_shp)
-
-
-
