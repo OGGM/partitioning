@@ -1,8 +1,14 @@
-from partitioning import dividing_glaciers
-import os
+from oggm import workflow,cfg
+import salem
 if __name__ == '__main__':
-    base_dir='C:\Users\Julia\Dropbox\GlacierDir_Example'
-    for dir in os.listdir(base_dir):
-        if dir.startswith('RGI40-11.00897'):
-            rgi_dir=base_dir+'/'+dir
-            dividing_glaciers(rgi_dir+'/dem.tif',rgi_dir+'/outlines.shp')
+    cfg.initialize()
+    base_dir = 'C:\\Users\\Julia\\OGGM_wd\\CentralEurope\\1000-2000'
+    #base_dir='/home/juliaeis/Dokumente/OGGM/work_dir/Alaska/land-terminating'
+    cfg.PATHS['working_dir'] = base_dir
+    #cfg.PATHS['dem_file']='/home/juliaeis/Dokumente/OGGM/work_dir/Alaska/dem.tif'
+    RGI_FILE=base_dir+'/outlines.shp'
+    RUN_DIVIDES=False
+
+    rgidf = salem.read_shapefile(RGI_FILE, cached=True)
+    gdirs = workflow.init_glacier_regions(rgidf)
+    print (len(gdirs))
