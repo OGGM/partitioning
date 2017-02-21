@@ -74,6 +74,7 @@ def flowsheds(input_dem):
     #transform maxima to (flowaccumulation,coordinates)
     new_coord=[]
     dtype=[('flowaccumulation',float),('coordinates',np.float64, (2,))]
+    # transform coordinates
     for coord in coordinates:
         new_coord.append((im[coord[0]][coord[1]],(transform[0]+(coord[1]+1)*transform[1]-transform[1]/2,transform[3]+coord[0]*transform[-1]-transform[1]/2)))
     new_coord=np.array(new_coord,dtype=dtype)
@@ -113,8 +114,8 @@ def flowsheds(input_dem):
                     p_glac.write(area)
 
                 # write shapefile with ONE pour_point for watershed (transform unicode to ascii, otherwise segmentation fault)
-                with fiona.open(dir+'/pour_point.shp', "w", "ESRI Shapefile", {'geometry': 'Point', 'properties': {'flow_acc':'float'}}, {k.encode('ascii'): v for k, v in crs.items()}) as output:
-                    output.write({'properties': {'flow_acc':coord['flowaccumulation']},'geometry': {'type':'Point','coordinates':coord['coordinates']}})
+                with fiona.open(dir+'/pour_point.shp', "w", "ESRI Shapefile", {'geometry': 'Point', 'properties': {'flow_acc':'float','id':'int'}}, {k.encode('ascii'): v for k, v in crs.items()}) as output:
+                    output.write({'properties': {'flow_acc':coord['flowaccumulation'],'id':i},'geometry': {'type':'Point','coordinates':coord['coordinates']}})
 
                 #calculate watershed for pour point
                 routing.delineate_watershed(os.path.dirname(input_dem)+'/gutter2.tif',dir+'/pour_point.shp',0,100, dir+'/watershed_out.shp', dir+'/snapped_outlet_points_uri.shp', dir+'/stream_out_uri.tif')
@@ -169,18 +170,36 @@ def gutter(masked_dem, depth):
             dest.write_band(1, mask_band)
     return gutter2_dem
 
-def merge_flowsheds(P_glac_dir,watershed_dir):
+
+def _my_small_func(para, option=False):
+    """This simplifies the loop below.
+
+    Parameters
+    ----------
+    para : float
+        this is the number pi
+    option : bool, optional
+        this says yes or no
+    Returns
+    -------
+    some variable
+    """
+    vara = para
+    return vara
+
+
+def merge_flowsheds(P_glac_dir, watershed_dir):
     import time
-    start=time.time()
+    start = time.time()
 
-    sliver_poly=[]
-    watershed=[]
-    glacier_poly={}
-    total_glacier=MultiPolygon()
-    P_poly=MultiPolygon()
-    glacier_n=0
+    sliver_poly = []
+    watershed = []
+    glacier_poly = {}
+    total_glacier = MultiPolygon()
+    P_poly = MultiPolygon()
+    glacier_n = 0
 
-    #determinde overlaps from P_glac with watershed
+    # determine overlaps from P_glac with watershed
     with fiona.open(watershed_dir, "r") as watersheds:
         for shed in watersheds:
             if not shape(shed['geometry']).is_valid:
@@ -383,34 +402,7 @@ def dividing_glaciers(input_dem,input_shp):
 
     # delete files which are not needed anymore
     for file in os.listdir(os.path.dirname(input_shp)):
-        for word in ['P_glac','flow', 'gutter', 'dem40','glaciers']:
+        for word in ['P_glac', 'flow','all','gutter']:
             if file.startswith(word):
                 os.remove(os.path.dirname(input_shp) + '/' + file)
     return no_glaciers,all_polygon
-
-if __name__ == '__main__':
-    import time
-    import shutil
-
-    start0=time.time()
-    #base_dir = '/home/juliaeis/Dokumente/OGGM/work_dir/CentralEurope/2000-3000'
-    #base_dir='C:\\Users\\Julia\\OGGM_wd\\CentralEurope\\3000+'
-    base_dir='C:\\Users\\Julia\\OGGM_wd\\Alaska\\'
-    for dir in os.listdir(base_dir+'\\per_glacier'):
-        if dir.startswith('RGI50-01.08833') and not dir.endswith('.png'):
-            print dir
-        #if dir in ['RGI50-11.01144','RGI50-11.02460','RGI50-11.02755']:
-
-            ###################preprocessing########################
-            input_shp =base_dir+'/per_glacier/'+dir+'/outlines.shp'
-            input_dem=os.path.dirname(input_shp)+'/dem.tif'
-            input2_dem=os.path.dirname(input_shp)+'/dem40m.tif'
-            os.system('gdalwarp -tr 40 40 -r cubicspline -overwrite ' + input_dem + ' ' + input2_dem)
-            for fol in os.listdir(os.path.dirname(input_shp)):
-                if fol.startswith('divide'):
-                    shutil.rmtree(os.path.dirname(input_shp)+'/'+fol)
-            os.makedirs(base_dir+'/per_glacier/'+dir+'/divide_01')
-            for file in [input_shp,os.path.dirname(input_shp)+'/outlines.shx',os.path.dirname(input_shp)+'/outlines.dbf']:
-                shutil.copy(file,os.path.dirname(input_shp)+'/divide_01')
-
-            n,k=dividing_glaciers(input2_dem, input_shp)
