@@ -14,7 +14,8 @@ from skimage.feature import peak_local_max
 from shapely.geometry import Point,Polygon,MultiPolygon
 from shapely.ops import cascaded_union
 
-def clip(input_dem,shp,buffersize,out_name):
+
+def _raster_clip(input_dem,shp,buffersize,out_name):
 
     output_dem=os.path.dirname(input_dem)+'/'+out_name+'.tif'
     if os.path.basename(shp) == 'outlines.shp':
@@ -48,6 +49,19 @@ def compactness(polygon):
         return True
     else:
         return False
+
+def fill_pits_with_saga(saga_cmd,dem):
+    saga_dir = os.path.dirname(dem)+'\\saga'
+
+    if not os.path.exists(saga_dir):
+        #create folder for saga_output
+        os.makedirs(os.path.dirname(dem)+'\\saga')
+    saga_filled = saga_dir+'\\filled.sdat'
+    filled_dem=os.path.dirname(dem)+'\\filled_dem.tif'
+    os.system('"'+saga_cmd+' ta_preprocessor 4 -ELEV:'+dem+' -FILLED:'+saga_filled+'"')
+    os.system('" gdal_translate '+saga_filled+' '+ filled_dem+'"' )
+    return filled_dem
+
 def flowacc(input_dem):
 
     new_flow_direction_map_uri =os.path.dirname(input_dem)+'/flow_dir.tif'
@@ -56,7 +70,7 @@ def flowacc(input_dem):
     routing.flow_direction_d_inf(input_dem, new_flow_direction_map_uri)
     #calculate flow_accumulation
     routing.flow_accumulation(new_flow_direction_map_uri,input_dem, new_flow_map_accumulation_uri)
-    clip(new_flow_map_accumulation_uri, os.path.dirname(input_dem)+'/gutter.shp', 0,'flow_gutter')
+    _raster_clip(new_flow_map_accumulation_uri, os.path.dirname(input_dem)+'/gutter.shp', 0,'flow_gutter')
     return os.path.dirname(input_dem)+'/flow_gutter.tif'
 
 def flowsheds(input_dem):
@@ -100,7 +114,7 @@ def flowsheds(input_dem):
                 #remove first element
                 new_coord=new_coord[1:]
                 #create radius around PPs and clip with outlines
-                area=({'properties': {'flow_acc': coord['flowaccumulation'],'id':i},'geometry': mapping(shape(outlines['geometry']).intersection(shape(Point(coord['coordinates']).buffer(p_glac_radius(14.3,0.5,coord['flowaccumulation'])))))})
+                area=({'properties': {'flow_acc': coord['flowaccumulation'],'id':i},'geometry': mapping(shape(outlines['geometry']).intersection(shape(Point(coord['coordinates']).buffer(_p_glac_radius(14.3,0.5,coord['flowaccumulation'])))))})
                 #if result is Polygon, add it to shapefile
                 if area['geometry']['type'] is 'Polygon':
                     p_glac.write(area)
@@ -152,15 +166,17 @@ def flowsheds(input_dem):
 
                 i=i+1
         print 'watershed calculation finished'
-    return [os.path.dirname(input_dem)+ '/P_glac.shp',os.path.dirname(input_dem)+'/all_watershed.shp',m]
+    return [os.path.dirname(input_dem)+ '/P_glac.shp',os.path.dirname(input_dem)+'/all_watershed.shp']
 
 def gutter(masked_dem, depth):
 
     gutter_shp = os.path.dirname(masked_dem) + '/gutter.shp'
 
     with fiona.open(gutter_shp, "w", "ESRI Shapefile", schema, crs) as output:
-        output.write({'properties': outlines['properties'],'geometry': mapping(shape(outlines['geometry']).buffer(pixelsize*2).difference(shape(outlines['geometry']).buffer(pixelsize)))})
-    gutter_dem = clip(masked_dem, gutter_shp,0, 'gutter')
+        outline_exterior = Polygon(shape(outlines['geometry']).exterior)
+        # output.write({'properties': outlines['properties'],'geometry': mapping(shape(outlines['geometry']).buffer(pixelsize*2).difference(shape(outlines['geometry']).buffer(pixelsize)))})
+        output.write({'properties': outlines['properties'],'geometry': mapping(outline_exterior.buffer(pixelsize*2).difference(outline_exterior.buffer(pixelsize)))})
+    gutter_dem = _raster_clip(masked_dem, gutter_shp,0, 'gutter')
     gutter2_dem=os.path.dirname(gutter_dem)+'/gutter2.tif'
     with rasterio.open(masked_dem) as src1:
         mask_band = np.array(src1.read(1))
@@ -346,7 +362,6 @@ def merge_flowsheds(P_glac_dir, watershed_dir):
                 k = False
             gla.write({'properties': outlines['properties'], 'geometry': mapping(glacier_poly[pol])})
         i = i + 1
-    #print time.time()-start
     return i - 1, k
 
 def merge_sliver_poly(glacier_poly,polygon):
@@ -360,49 +375,69 @@ def merge_sliver_poly(glacier_poly,polygon):
         glacier_poly[max_boundary_id] = glacier_poly[max_boundary_id].union(shape(polygon))
     return glacier_poly
 
-def p_glac_radius(a, b, F):
+
+def _p_glac_radius(a, b, F):
     if a * (F ** b)  < 3500:
         return a * (F ** b)
     else:
         return 3500
 
-def dividing_glaciers(input_dem,input_shp):
-    #*************************************************** preprocessing *************************************************
-    #read outlines.shp
+
+def dividing_glaciers(input_dem, input_shp):
+    """ This is the main structure of the algorithm
+
+    Parameters
+    ----------
+    input_dem : str
+        path to the raster file(.tif) of the glacier, resolution have to be 40m!
+    input_shp : str
+        path to the shape file of the outline of the glacier
+
+    Returns
+    -------
+    number of divides (int)
+    """
     global outlines
     global crs
     global schema
-    with fiona.open(input_shp,'r') as shapefile:
-        outlines=shapefile.next()
-        crs=shapefile.crs
-        schema=shapefile.schema
-        if not shape(outlines['geometry']).is_valid:
-            outlines['geometry']=shape(outlines['geometry']).buffer(0)
+    global pixelsize
 
-    # get pixel size
-    with rasterio.open(input_dem) as dem:
-        global pixelsize
-        pixelsize = int(dem.transform[1])
+    pixelsize = 40
+    # read outlines.shp
+    with fiona.open(input_shp, 'r') as shapefile:
+        outlines = shapefile.next()
+        crs = shapefile.crs
+        schema = shapefile.schema
+        if not shape(outlines['geometry']).is_valid:
+            outlines['geometry'] = shape(outlines['geometry']).buffer(0)
 
     #clip dem along buffer1
-    masked_dem=clip(input_dem,input_shp,4*pixelsize,'masked')
+    masked_dem = _raster_clip(input_dem, input_shp, 4*pixelsize, 'masked')
+
     #fill pits
-    filled_dem=os.path.dirname(masked_dem)+'//filled_dem.tif'
-    routing.fill_pits(masked_dem,filled_dem)
+    saga_cmd = 'C:\\"Program Files"\SAGA-GIS\saga_cmd.exe'
+    filled_dem = fill_pits_with_saga(saga_cmd, masked_dem)
+    # TODO: when fill_pits from pygeoprocessing works, saga command could be replaced by the following 2 lines
+    # filled_dem = os.path.dirname(masked_dem)+'//filled_dem.tif'
+    # routing.fill_pits(masked_dem, filled_dem)
+
     #create gutter
-    gutter_dem=gutter(filled_dem,100)
+    gutter_dem = gutter(filled_dem, 100)
 
-    #****************************** Identification of pour points and flowshed calculation *****************************
+    # calculation of flow accumulation and flow direction for PourPoint (PP)
+    # determination
     flow_gutter = flowacc(gutter_dem)
-    # flowshed calculation
-    [P_glac, watersheds,m] = flowsheds(flow_gutter)
 
-    #*************** Allocation of flowsheds to individual glaciers & Identification of sliver polygons ****************
-    no_glaciers,all_polygon=merge_flowsheds(P_glac, watersheds)
+    # identification of PP, watershed calculation
+    [P_glac, watersheds] = flowsheds(flow_gutter)
+
+    # Allocation of flowsheds to individual glaciers
+    # & Identification of sliver polygons
+    no_glaciers, all_polygon = merge_flowsheds(P_glac, watersheds)
 
     # delete files which are not needed anymore
     for file in os.listdir(os.path.dirname(input_shp)):
-        for word in ['P_glac', 'flow','all','gutter']:
+        for word in ['P_glac', 'flow', 'glaciers', 'all', 'gutter']:
             if file.startswith(word):
                 os.remove(os.path.dirname(input_shp) + '/' + file)
-    return no_glaciers,all_polygon
+    return no_glaciers
