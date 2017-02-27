@@ -8,6 +8,7 @@ from shapely.geometry import mapping, shape
 import rasterio
 from rasterio.tools.mask import mask
 from pygeoprocessing import routing
+import geopandas as gpd
 
 from skimage import img_as_float
 from skimage.feature import peak_local_max
@@ -15,9 +16,9 @@ from shapely.geometry import Point,Polygon,MultiPolygon
 from shapely.ops import cascaded_union
 
 
-def _raster_clip(input_dem,shp,buffersize,out_name):
+def _raster_clip(input_dem,shp, out_name, buffersize=0):
 
-    output_dem=os.path.dirname(input_dem)+'/'+out_name+'.tif'
+    output_dem = os.path.join(os.path.dirname(input_dem),out_name+'.tif')
     if os.path.basename(shp) == 'outlines.shp':
         geoms=[mapping(shape(outlines['geometry']).buffer(buffersize))]
     else:
@@ -70,7 +71,7 @@ def flowacc(input_dem):
     routing.flow_direction_d_inf(input_dem, new_flow_direction_map_uri)
     #calculate flow_accumulation
     routing.flow_accumulation(new_flow_direction_map_uri,input_dem, new_flow_map_accumulation_uri)
-    _raster_clip(new_flow_map_accumulation_uri, os.path.dirname(input_dem)+'/gutter.shp', 0,'flow_gutter')
+    _raster_clip(new_flow_map_accumulation_uri, os.path.dirname(input_dem)+'/gutter.shp','flow_gutter')
     return os.path.dirname(input_dem)+'/flow_gutter.tif'
 
 def flowsheds(input_dem):
@@ -170,14 +171,14 @@ def flowsheds(input_dem):
 
 def gutter(masked_dem, depth):
 
-    gutter_shp = os.path.dirname(masked_dem) + '/gutter.shp'
+    gutter_shp = os.path.join(os.path.dirname(masked_dem), 'gutter.shp')
 
     with fiona.open(gutter_shp, "w", "ESRI Shapefile", schema, crs) as output:
         outline_exterior = Polygon(shape(outlines['geometry']).exterior)
         # output.write({'properties': outlines['properties'],'geometry': mapping(shape(outlines['geometry']).buffer(pixelsize*2).difference(shape(outlines['geometry']).buffer(pixelsize)))})
         output.write({'properties': outlines['properties'],'geometry': mapping(outline_exterior.buffer(pixelsize*2).difference(outline_exterior.buffer(pixelsize)))})
-    gutter_dem = _raster_clip(masked_dem, gutter_shp,0, 'gutter')
-    gutter2_dem=os.path.dirname(gutter_dem)+'/gutter2.tif'
+    gutter_dem = _raster_clip(masked_dem, gutter_shp, 'gutter')
+    gutter2_dem = os.path.join(os.path.dirname(gutter_dem),'gutter2.tif')
     with rasterio.open(masked_dem) as src1:
         mask_band = np.array(src1.read(1))
         with rasterio.open(gutter_dem) as src:
@@ -348,10 +349,9 @@ def merge_flowsheds(P_glac_dir, watershed_dir):
             glacier_poly.pop(glacier)
 
     for pol in glacier_poly:
-
-        if not os.path.isdir(os.path.dirname(P_glac_dir) + '/divide_' + str(i).zfill(2)):
-            os.mkdir(os.path.dirname(P_glac_dir) + '/divide_' + str(i).zfill(2))
-        with fiona.open(os.path.dirname(P_glac_dir) + '/divide_' + str(i).zfill(2) + '/outlines.shp', "w",
+        if not os.path.isdir(os.path.join(os.path.dirname(P_glac_dir),'divide_'+str(i).zfill(2))):
+            os.mkdir(os.path.join(os.path.dirname(P_glac_dir), 'divide_'+ str(i).zfill(2)))
+        with fiona.open(os.path.join(os.path.dirname(P_glac_dir),'divide_' + str(i).zfill(2),'outlines.shp'), "w",
                         "ESRI Shapefile", schema, crs) as gla:
             # for pol in glacier_poly
             if 'AREA' in schema['properties'].keys():
@@ -410,9 +410,12 @@ def dividing_glaciers(input_dem, input_shp):
         schema = shapefile.schema
         if not shape(outlines['geometry']).is_valid:
             outlines['geometry'] = shape(outlines['geometry']).buffer(0)
+    # read with gdal
+    #outlines = gpd.read_file(input_shp)
+    #outlines['geometry'] = outlines['geometry'].buffer(0)
 
     #clip dem along buffer1
-    masked_dem = _raster_clip(input_dem, input_shp, 4*pixelsize, 'masked')
+    masked_dem = _raster_clip(input_dem, input_shp, 'masked', buffersize = 4*pixelsize)
 
     #fill pits
     saga_cmd = 'C:\\"Program Files"\SAGA-GIS\saga_cmd.exe'
@@ -439,5 +442,5 @@ def dividing_glaciers(input_dem, input_shp):
     for file in os.listdir(os.path.dirname(input_shp)):
         for word in ['P_glac', 'flow', 'glaciers', 'all', 'gutter']:
             if file.startswith(word):
-                os.remove(os.path.dirname(input_shp) + '/' + file)
+                os.remove(os.path.join(os.path.dirname(input_shp),file))
     return no_glaciers
