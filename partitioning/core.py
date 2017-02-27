@@ -1,5 +1,6 @@
 
 import os
+import sys
 import numpy as np
 import math
 import fiona
@@ -52,15 +53,19 @@ def compactness(polygon):
         return False
 
 def fill_pits_with_saga(saga_cmd,dem):
-    saga_dir = os.path.dirname(dem)+'\\saga'
+    saga_dir = os.path.join(os.path.dirname(dem),'saga')
 
     if not os.path.exists(saga_dir):
         #create folder for saga_output
-        os.makedirs(os.path.dirname(dem)+'\\saga')
-    saga_filled = saga_dir+'\\filled.sdat'
-    filled_dem=os.path.dirname(dem)+'\\filled_dem.tif'
-    os.system('"'+saga_cmd+' ta_preprocessor 4 -ELEV:'+dem+' -FILLED:'+saga_filled+'"')
-    os.system('" gdal_translate '+saga_filled+' '+ filled_dem+'"' )
+        os.makedirs(saga_dir)
+    saga_filled = os.path.join(saga_dir,'filled.sdat')
+    filled_dem=os.path.join(os.path.dirname(dem),'filled_dem.tif')
+    if sys.platform.startswith('linux'):
+        os.system('saga_cmd ta_preprocessor 4 -ELEV:' + dem + ' -FILLED:' + saga_filled )
+        os.system('gdal_translate ' + saga_filled + ' ' + filled_dem )
+    elif sys.platform.startswith('win'):
+        os.system('"'+saga_cmd+' ta_preprocessor 4 -ELEV:'+dem+' -FILLED:'+saga_filled+'"')
+        os.system('" gdal_translate '+saga_filled+' '+ filled_dem+'"' )
     return filled_dem
 
 def flowacc(input_dem):
