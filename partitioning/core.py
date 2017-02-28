@@ -10,6 +10,7 @@ import rasterio
 from rasterio.tools.mask import mask
 from pygeoprocessing import routing
 import geopandas as gpd
+import matplotlib.pyplot as plt
 
 from skimage import img_as_float
 from skimage.feature import peak_local_max
@@ -17,15 +18,34 @@ from shapely.geometry import Point, Polygon, MultiPolygon
 from shapely.ops import cascaded_union
 
 
-def _raster_clip(input_dem, shp, out_name, buffersize=0):
+def _raster_mask(input_dem, polygon, out_name):
+    '''
+    mask a raster file along the polygon, saves a new raster named out_name
+
+    Parameters
+    ----------
+    input_dem   : str
+        path to the raster file
+    polygon     : Polygon
+        polygon along the raster will
+    out_name    : str
+        name of the output raster (.tif)
+
+    Returns
+    -------
+    path to the output raster
+    '''
 
     output_dem = os.path.join(os.path.dirname(input_dem), out_name+'.tif')
+    geoms = [mapping(polygon)]
+    '''
     if os.path.basename(shp) == 'outlines.shp':
-        geoms = [mapping(shape(outlines['geometry']).buffer(buffersize))]
+        geoms = [mapping(co.buffer(buffersize))]
+        #geoms = [mapping(shape(outlines['geometry']).buffer(buffersize))]
     else:
         with fiona.open(shp, "r") as shapefile:
             geoms = [mapping(shape(shapefile.next()['geometry']).buffer(buffersize))]
-
+    '''
     with rasterio.open(input_dem) as src:
         # out_image, out_transform = mask(src, geoms,nodata=np.nan, crop=False)
         out_image, out_transform = mask(src, geoms, nodata=np.nan, crop=False)
@@ -54,32 +74,38 @@ def compactness(polygon):
         return False
 
 
-def fill_pits_with_saga(saga_cmd, dem):
+def _fill_pits_with_saga(dem, saga_cmd=None):
     saga_dir = os.path.join(os.path.dirname(dem), 'saga')
-
     if not os.path.exists(saga_dir):
         # create folder for saga_output
         os.makedirs(saga_dir)
     saga_filled = os.path.join(saga_dir, 'filled.sdat')
     filled_dem = os.path.join(os.path.dirname(dem), 'filled_dem.tif')
     if sys.platform.startswith('linux'):
-        os.system('saga_cmd ta_preprocessor 4 -ELEV:' + dem + ' -FILLED:' + saga_filled)
+        os.system('saga_cmd ta_preprocessor 4 -ELEV:' + dem + ' -FILLED:'
+                  + saga_filled)
         os.system('gdal_translate ' + saga_filled + ' ' + filled_dem)
     elif sys.platform.startswith('win'):
-        os.system('"'+saga_cmd+' ta_preprocessor 4 -ELEV:'+dem+' -FILLED:'+saga_filled+'"')
+        os.system('"'+saga_cmd+' ta_preprocessor 4 -ELEV:'+dem+' -FILLED:'
+                  + saga_filled+'"')
         os.system('" gdal_translate '+saga_filled+' '+filled_dem+'"')
     return filled_dem
 
 
-def flowacc(input_dem):
-    new_flow_direction_map_uri = os.path.join(os.path.dirname(input_dem), 'flow_dir.tif')
-    new_flow_map_accumulation_uri = os.path.join(os.path.dirname(input_dem), 'flow_accumulation.tif')
+def _flowacc(input_dem):
+    flow_direction = os.path.join(os.path.dirname(input_dem), 'flow_dir.tif')
+    flow_accumulation = os.path.join(os.path.dirname(input_dem),
+                                     'flow_accumulation.tif')
     # calculate flow direction
-    routing.flow_direction_d_inf(input_dem, new_flow_direction_map_uri)
+    routing.flow_direction_d_inf(input_dem, flow_direction)
     # calculate flow_accumulation
-    routing.flow_accumulation(new_flow_direction_map_uri, input_dem, new_flow_map_accumulation_uri)
-    _raster_clip(new_flow_map_accumulation_uri, os.path.dirname(input_dem)+'/gutter.shp', 'flow_gutter')
-    return os.path.dirname(input_dem)+'/flow_gutter.tif'
+    routing.flow_accumulation(flow_direction, input_dem, flow_accumulation)
+    # mask along gutter
+    gutter_shp = os.path.join(os.path.dirname(input_dem), 'gutter.shp')
+    gutter = gpd.read_file(gutter_shp)['geometry'][0]
+    _raster_mask(flow_accumulation, gutter, 'flow_gutter')
+
+    return os.path.join(os.path.dirname(input_dem), 'flow_gutter.tif')
 
 
 def flowsheds(input_dem):
@@ -177,39 +203,50 @@ def flowsheds(input_dem):
     return [os.path.dirname(input_dem) + '/P_glac.shp', os.path.dirname(input_dem)+'/all_watershed.shp']
 
 
-def gutter(masked_dem, depth):
-    gutter_shp = os.path.join(os.path.dirname(masked_dem), 'gutter.shp')
+def _gutter(masked_dem, depth):
+    """
 
-    with fiona.open(gutter_shp, "w", "ESRI Shapefile", schema, crs) as output:
-        outline_exterior = Polygon(shape(outlines['geometry']).exterior)
-        # output.write({'properties': outlines['properties'],'geometry': mapping(shape(outlines['geometry']).buffer(pixelsize*2).difference(shape(outlines['geometry']).buffer(pixelsize)))})
-        output.write({'properties': outlines['properties'], 'geometry': mapping(outline_exterior.buffer(pixelsize*2).difference(outline_exterior.buffer(pixelsize)))})
-    gutter_dem = _raster_clip(masked_dem, gutter_shp, 'gutter')
+    Parameters
+    ----------
+    masked_dem  : str
+        path to a raster file
+    depth       : int
+        raster will be lowered by dept along gutter
+
+    Returns
+    -------
+    path to the output raster
+
+    """
+    # create gutter shp
+    gutter_shp = os.path.join(os.path.dirname(masked_dem), 'gutter.shp')
+    outline_exterior = Polygon(co.exterior)
+    gutter_shape = outline_exterior.buffer(pixelsize * 2).difference(
+        outline_exterior.buffer(pixelsize))
+    gpd.GeoSeries(gutter_shape, crs=crs).to_file(gutter_shp)
+
+    # lower dem along gutter
+    gutter_dem = _raster_mask(masked_dem, gutter_shape, 'gutter')
     gutter2_dem = os.path.join(os.path.dirname(gutter_dem), 'gutter2.tif')
     with rasterio.open(masked_dem) as src1:
         mask_band = np.array(src1.read(1))
         with rasterio.open(gutter_dem) as src:
-            mask_band = np.float32(mask_band - depth * (~np.isnan(np.array(src.read(1)))))
+            mask_band = np.float32(mask_band - depth * (~np.isnan(np.array(
+                src.read(1)))))
         with rasterio.open(gutter2_dem, "w", **src.meta.copy()) as dest:
             dest.write_band(1, mask_band)
+
     return gutter2_dem
 
 
-def _my_small_func(para, option=False):
-    """This simplifies the loop below.
+def identify_pour_points(dem):
 
-    Parameters
-    ----------
-    para : float
-        this is the number pi
-    option : bool, optional
-        this says yes or no
-    Returns
-    -------
-    some variable
-    """
-    vara = para
-    return vara
+    # calculation of flow accumulation and flow direction
+    flow_gutter = _flowacc(dem)
+
+    # identify Pour Points
+    pour_points_shp = _pour_points(flow_gutter)
+    return pour_points_shp
 
 
 def merge_flowsheds(p_glac_dir, watershed_dir):
@@ -391,13 +428,106 @@ def _p_glac_radius(a, b, f):
         return 3500
 
 
+def transform_coord(tupel, transform):
+    new_x = transform[0]+(tupel[1]+1)*transform[1]-transform[1]/2
+    new_y = transform[3]+tupel[0]*transform[-1]-transform[1]/2
+
+    return Point(new_x, new_y)
+
+
+def _pour_points(dem):
+    # open gutter with flow accumulation
+    with rasterio.open(dem) as src:
+        transform = src.transform
+        band = np.array(src.read(1))
+    im = img_as_float(band)
+    nan = np.where(np.isnan(im))
+    # set nan to zero
+    im[nan] = 0
+    # calculate maxima
+    coordinates = peak_local_max(im, min_distance=4)
+    # transform maxima to (flowaccumulation,coordinates)
+    new_coord = []
+    new = []
+    dtype = [('flowaccumulation', float), ('coordinates', object)]
+    # transform coordinates
+    for x, y in coordinates:
+        new_coord.append((im[x][y], transform_coord([x, y], transform)))
+        new.append(Point(transform_coord([x, y], transform)))
+    new_coord = np.array(new_coord, dtype=dtype)
+    # sort array  by flowaccumulation
+    new_coord = np.sort(new_coord, order='flowaccumulation')
+    # reverse array
+    new_coord = new_coord[::-1]
+    pp = gpd.GeoDataFrame({'flowaccumulation': new_coord['flowaccumulation']},
+                          geometry=new_coord['coordinates'],  crs=crs)
+    pp_shp = os.path.join(os.path.dirname(dem), 'pour_points.shp')
+    pp.to_file(pp_shp)
+    return pp_shp
+
+
+def preprocessing(dem, shp, saga_cmd=None):
+
+    """ Run all preprocessing tasks:
+
+        fill pits from DEM,
+        mask DEM along buffer1,
+        lower it by 100 m along buffer2
+
+    Parameters
+    ----------
+    dem     : str
+        path to the DEM file
+    shp     : str
+        path to the shape file (outlines.shp)
+    saga_cmd: str
+        path to the SAGA GIS executable file (needed on win system)
+
+    Returns
+    -------
+    path to the output raster
+    """
+
+    global outlines
+    global crs
+    global schema
+    global pixelsize
+    global co
+    pixelsize = 40
+
+    # fill pits
+    filled_dem = _fill_pits_with_saga(dem, saga_cmd=saga_cmd)
+
+    # read outlines.shp
+    with fiona.open(shp, 'r') as shapefile:
+        outlines = shapefile.next()
+        # crs = shapefile.crs
+        schema = shapefile.schema
+        # outlines['geometry'] = shape(outlines['geometry']).buffer(0)
+
+    # read outlines with gdal
+    out = gpd.read_file(shp)
+    crs = out.crs
+    co = out['geometry'][0]
+    # gpd.GeoSeries([co], crs=crs).to_file(os.path.join(os.path.dirname(shp),
+    # 'co.shp'))
+
+    # mask dem along buffer1
+    masked_dem = _raster_mask(filled_dem, co.buffer(4*pixelsize), 'masked')
+
+    # lower dem by l_gutter along gutter
+    gutter_dem = _gutter(masked_dem, 100)
+
+    return gutter_dem
+
+
 def dividing_glaciers(input_dem, input_shp):
     """ This is the main structure of the algorithm
 
     Parameters
     ----------
     input_dem : str
-        path to the raster file(.tif) of the glacier, resolution have to be 40m!
+        path to the raster file(.tif) of the glacier, resolution has to be 40m!
     input_shp : str
         path to the shape file of the outline of the glacier
 
@@ -405,12 +535,11 @@ def dividing_glaciers(input_dem, input_shp):
     -------
     number of divides (int)
     """
-    global outlines
-    global crs
-    global schema
-    global pixelsize
 
-    pixelsize = 40
+    gutter_dem = preprocessing(input_dem, input_shp)
+    pour_points = identify_pour_points(gutter_dem)
+
+    '''
     # read outlines.shp
     with fiona.open(input_shp, 'r') as shapefile:
         outlines = shapefile.next()
@@ -427,7 +556,7 @@ def dividing_glaciers(input_dem, input_shp):
 
     # fill pits
     saga_cmd = 'C:\\"Program Files"\SAGA-GIS\saga_cmd.exe'
-    filled_dem = fill_pits_with_saga(saga_cmd, masked_dem)
+    filled_dem = fill_pits_with_saga(masked_dem, saga_cmd=saga_cmd)
     # TODO: when fill_pits from pygeoprocessing works, saga command could be replaced by the following 2 lines
     # filled_dem = os.path.dirname(masked_dem)+'//filled_dem.tif'
     # routing.fill_pits(masked_dem, filled_dem)
@@ -452,3 +581,4 @@ def dividing_glaciers(input_dem, input_shp):
             if file.startswith(word):
                 os.remove(os.path.join(os.path.dirname(input_shp), file))
     return no_glaciers
+    '''

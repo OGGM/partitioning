@@ -9,16 +9,16 @@ import pickle
 if __name__ == '__main__':
     cfg.initialize()
     # gdirs without partitioning
-    #base_dir = 'C:\\Users\\Julia\\OGGM_wd\\CentralEurope\\3000+'
-    base_dir =  'C:\\Users\\Julia\\OGGM_wd\\Alaska_non_tidewater'
-    cfg.PATHS['topo_dir']= 'C:\\Users\\Julia\\OGGM_wd\\topo_dir'
+    # base_dir = 'C:\\Users\\Julia\\OGGM_wd\\CentralEurope\\3000+'
+    base_dir = 'C:\\Users\\Julia\\OGGM_wd\\Alaska_non_tidewater'
+    cfg.PATHS['topo_dir'] = 'C:\\Users\\Julia\\OGGM_wd\\topo_dir'
     RGI_FILE = base_dir + '\\01_rgi50_Alaska.shp'
     cfg.PATHS['working_dir'] = base_dir
     cfg.PARAMS['divides_gdf'] = gpd.GeoDataFrame()
     rgidf = salem.read_shapefile(RGI_FILE, cached=True)
     gdirs = workflow.init_glacier_regions(rgidf)
-    ID_s = pickle.load(open(base_dir+'\\10-15.pkl','rb'))
-    #ID_s = ['RGI50-01.10411']
+    ID_s = pickle.load(open(base_dir+'\\10-15.pkl', 'rb'))
+    # ID_s = ['RGI50-01.10411']
     for gdir in gdirs:
         if gdir.n_divides is not 1 and gdir.rgi_id in ID_s:
             input_shp = gdir.get_filepath('outlines', div_id=0)
@@ -44,5 +44,4 @@ if __name__ == '__main__':
                     ax1 = fig.add_subplot(1, 2, 1)
                     graphics.plot_centerlines(gdir_d, ax=ax1)
             plt.savefig(base_dir+'\\plots' + '\\' + str(gdir_d.rgi_id) + '.png')
-            #plt.show()
-
+            # plt.show()
