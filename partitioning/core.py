@@ -108,99 +108,40 @@ def _flowacc(input_dem):
     return os.path.join(os.path.dirname(input_dem), 'flow_gutter.tif')
 
 
-def flowsheds(input_dem):
-    # open gutter with flow accumulation
-    with rasterio.open(input_dem) as src:
-        transform = src.transform
-        band = np.array(src.read(1))
-    im = img_as_float(band)
-    nan = np.where(np.isnan(im))
-    # set nan to zero
-    im[nan] = 0
-    # calculate maxima
-    coordinates = peak_local_max(im, min_distance=4)
-    # transform maxima to (flowaccumulation,coordinates)
-    new_coord = []
-    dtype = [('flowaccumulation', float), ('coordinates', np.float64, (2,))]
-    # transform coordinates
-    for coord in coordinates:
-        new_coord.append((im[coord[0]][coord[1]], (transform[0]+(coord[1]+1)*transform[1]-transform[1]/2, transform[3] +
-                                                   coord[0]*transform[-1]-transform[1]/2)))
-    new_coord = np.array(new_coord, dtype=dtype)
-    # sort array  by flowaccumulation
-    new_coord = np.sort(new_coord, order='flowaccumulation')
-    # reverse array
-    new_coord = new_coord[::-1]
+def flowshed_calculation(dem, shp):
+    dir = os.path.dirname(dem)
+    watershed_dir = os.path.join(dir, 'all_watersheds.shp')
+    flowshed_dir = os.path.join(dir, 'flowshed.shp')
+    # calculate watersheds
+    routing.delineate_watershed(dem, shp, 0, 100, watershed_dir,
+                                os.path.join(dir, 'snapped_outlet_points.shp'),
+                                os.path.join(dir, 'stream_out_uri.tif'))
+    watersheds = gpd.read_file(watershed_dir)
+    pour_points = gpd.read_file(dir + '/pour_points.shp')
+    flowsheds = gpd.GeoSeries(watersheds.intersection(co), crs=crs)
+    # remove empty objects
+    flowsheds = flowsheds[flowsheds.type != 'GeometryCollection']
 
-    with fiona.open(os.path.dirname(input_dem)+ '/P_glac.shp', "w", "ESRI Shapefile", {'geometry': 'MultiPolygon', 'properties': {'flow_acc': 'float', 'id': 'int'}}, crs) as p_glac:
-        print 'start watershed calculation'
-        # for each pour point: create shapefile and run delinate watershed
-        with fiona.open(os.path.dirname(input_dem)+'/all_watershed.shp', "w", "ESRI Shapefile", {'geometry': 'MultiPolygon', 'properties': {'flow_acc': 'float', 'id': 'int'}}, crs) as all_watershed:
-            i = 0
-            m = len(new_coord)
-            # print m
-            while len(new_coord) is not 0:
-                # create directory
-                dir = os.path.dirname(input_dem)+'/'+str(i)
-                if not os.path.isdir(dir):
-                    os.makedirs(dir)
+    # if object is Multipolygon split it
+    for i, shed in enumerate(flowsheds):
+        if shed.type is 'MultiPolygon':
+            # find polygon with minimal distance to pour point
+            dist = []
+            for s0 in shed:
+                dist.append(s0.distance(pour_points['geometry'][i]))
+            # add each polygon to all_watershed.shp
+            for j, s1 in enumerate(shed):
+                # polygon nearest to PP get current id
+                if j == np.argmin(dist):
+                    flowsheds[i] = shape(s1)
+                # all other poylgons were added at the end
+                else:
+                    s3 = gpd.GeoSeries(s1)
+                    flowsheds = flowsheds.append(s3, ignore_index=True)
 
-                coord = new_coord[0]
-                # remove first element
-                new_coord = new_coord[1:]
-                # create radius around PPs and clip with outlines
-                area = ({'properties': {'flow_acc': coord['flowaccumulation'], 'id': i}, 'geometry': mapping(shape(outlines['geometry']).intersection(shape(Point(coord['coordinates']).buffer(_p_glac_radius(14.3, 0.5, coord['flowaccumulation'])))))})
-                # if result is Polygon, add it to shapefile
-                if area['geometry']['type'] is 'Polygon':
-                    p_glac.write(area)
-                    # all_pourP.write({'properties': {'flow_acc': coord['flowaccumulation'], 'id': i,'p_glac': len(area['geometry']['coordinates'])},'geometry': {'type': 'Point', 'coordinates': coord['coordinates']}})
-                # if result is MultiPolygon, add only the polygon whose perimeter is closest to PP
-                elif area['geometry']['type'] is 'MultiPolygon':
-                    min_dist = []
-                    for j in shape(area['geometry']):
-                        min_dist.append(shape(j).distance(Point(coord['coordinates'])))
-                    area['geometry'] = mapping(shape(area['geometry'])[np.argmin(min_dist)])
-                    p_glac.write(area)
-
-                # write shapefile with ONE pour_point for watershed (transform unicode to ascii, otherwise segmentation fault)
-                with fiona.open(dir+'/pour_point.shp', "w", "ESRI Shapefile", {'geometry': 'Point', 'properties': {'flow_acc':'float', 'id': 'int'}}, {k.encode('ascii'): v for k, v in crs.items()}) as output:
-                    output.write({'properties': {'flow_acc': coord['flowaccumulation'], 'id': i}, 'geometry': {'type': 'Point', 'coordinates': coord['coordinates']}})
-
-                # calculate watershed for pour point
-                routing.delineate_watershed(os.path.dirname(input_dem)+'/gutter2.tif',dir+'/pour_point.shp', 0, 100, dir + '/watershed_out.shp', dir+'/snapped_outlet_points_uri.shp', dir+'/stream_out_uri.tif')
-
-                # add watershed polygon to watershed_all.shp
-                with fiona.open(dir+'/watershed_out.shp', "r", "ESRI Shapefile") as watershed:
-                    w = watershed.next()
-                # cut watershed with outlines
-                w['geometry'] = mapping(shape(outlines['geometry']).intersection(shape(w['geometry']).buffer(0)))
-                w['properties']['id'] = i
-
-                if w['geometry']['type'] is 'Polygon':
-                    all_watershed.write(w)
-                if w['geometry']['type'] is 'MultiPolygon':
-                    # find polygon with minimal distance to pour point
-                    dist = []
-                    for k in shape(w['geometry']):
-                        dist.append(shape(k).distance(Point(coord['coordinates'])))
-                    # add each polygon to all_watershed.shp
-                    n = 0
-                    for l in shape(w['geometry']):
-                        w['geometry'] = mapping(shape(l))
-                        # polygon nearest to PP get current id
-                        if n == np.argmin(dist):
-                            w['properties']['id'] = i
-                        # all other poylgons get new id
-                        else:
-                            m += 1
-                            w['properties']['id'] = m
-                        all_watershed.write(w)
-                        n += 1
-
-                shutil.rmtree(dir)
-                i += 1
-        print 'watershed calculation finished'
-    return [os.path.dirname(input_dem) + '/P_glac.shp', os.path.dirname(input_dem)+'/all_watershed.shp']
+    result = gpd.GeoDataFrame(geometry=flowsheds)
+    result.to_file(flowshed_dir)
+    return flowshed_dir
 
 
 def _gutter(masked_dem, depth):
@@ -246,7 +187,29 @@ def identify_pour_points(dem):
 
     # identify Pour Points
     pour_points_shp = _pour_points(flow_gutter)
+
     return pour_points_shp
+
+
+def merge_flows(shed_shp, pour_point_shp):
+    p_glac_dir = os.path.join(os.path.dirname(pour_point_shp), 'p_glac.shp')
+    # create P_glac
+    pp = gpd.read_file(pour_point_shp)
+    geoms = [co.intersection(pp.geometry[i].buffer(
+        _p_glac_radius(14.3, 0.5, pp.flowacc[i]))) for i in pp.index]
+
+    p_glac = gpd.GeoDataFrame(geometry=geoms, crs=crs)
+    # delete empty objects
+    p_glac = p_glac[p_glac.type != 'GeometryCollection']
+    for i in p_glac.index:
+        if p_glac.geometry[i].type is 'MultiPolygon':
+            min_dist = []
+            for j in p_glac.geometry[i]:
+                min_dist.append(j.distance(pp.geometry[i]))
+            p_glac.geometry[i] = p_glac.geometry[i][np.argmin(min_dist)]
+
+    p_glac.to_file(p_glac_dir)
+    return p_glac_dir
 
 
 def merge_flowsheds(p_glac_dir, watershed_dir):
@@ -428,7 +391,7 @@ def _p_glac_radius(a, b, f):
         return 3500
 
 
-def transform_coord(tupel, transform):
+def _transform_coord(tupel, transform):
     new_x = transform[0]+(tupel[1]+1)*transform[1]-transform[1]/2
     new_y = transform[3]+tupel[0]*transform[-1]-transform[1]/2
 
@@ -445,21 +408,21 @@ def _pour_points(dem):
     # set nan to zero
     im[nan] = 0
     # calculate maxima
-    coordinates = peak_local_max(im, min_distance=4)
+    coordinates = peak_local_max(im, min_distance=1)
     # transform maxima to (flowaccumulation,coordinates)
     new_coord = []
     new = []
     dtype = [('flowaccumulation', float), ('coordinates', object)]
     # transform coordinates
     for x, y in coordinates:
-        new_coord.append((im[x][y], transform_coord([x, y], transform)))
-        new.append(Point(transform_coord([x, y], transform)))
+        new_coord.append((im[x][y], _transform_coord([x, y], transform)))
+        new.append(Point(_transform_coord([x, y], transform)))
     new_coord = np.array(new_coord, dtype=dtype)
     # sort array  by flowaccumulation
     new_coord = np.sort(new_coord, order='flowaccumulation')
     # reverse array
     new_coord = new_coord[::-1]
-    pp = gpd.GeoDataFrame({'flowaccumulation': new_coord['flowaccumulation']},
+    pp = gpd.GeoDataFrame({'flowacc': new_coord['flowaccumulation']},
                           geometry=new_coord['coordinates'],  crs=crs)
     pp_shp = os.path.join(os.path.dirname(dem), 'pour_points.shp')
     pp.to_file(pp_shp)
@@ -537,48 +500,19 @@ def dividing_glaciers(input_dem, input_shp):
     """
 
     gutter_dem = preprocessing(input_dem, input_shp)
-    pour_points = identify_pour_points(gutter_dem)
+    pour_points_dir = identify_pour_points(gutter_dem)
+    flowsheds_dir = flowshed_calculation(gutter_dem, pour_points_dir)
+    p_glac = merge_flows(flowsheds_dir, pour_points_dir)
+    merge_flowsheds(p_glac, flowsheds_dir)
 
-    '''
-    # read outlines.shp
-    with fiona.open(input_shp, 'r') as shapefile:
-        outlines = shapefile.next()
-        crs = shapefile.crs
-        schema = shapefile.schema
-        if not shape(outlines['geometry']).is_valid:
-            outlines['geometry'] = shape(outlines['geometry']).buffer(0)
-    # read with gdal
-    # outlines = gpd.read_file(input_shp)
-    # outlines['geometry'] = outlines['geometry'].buffer(0)
-
-    # clip dem along buffer1
-    masked_dem = _raster_clip(input_dem, input_shp, 'masked', buffersize=4*pixelsize)
-
-    # fill pits
-    saga_cmd = 'C:\\"Program Files"\SAGA-GIS\saga_cmd.exe'
-    filled_dem = fill_pits_with_saga(masked_dem, saga_cmd=saga_cmd)
-    # TODO: when fill_pits from pygeoprocessing works, saga command could be replaced by the following 2 lines
-    # filled_dem = os.path.dirname(masked_dem)+'//filled_dem.tif'
-    # routing.fill_pits(masked_dem, filled_dem)
-
-    # create gutter
-    gutter_dem = gutter(filled_dem, 100)
-
-    # calculation of flow accumulation and flow direction for PourPoint (PP)
-    # determination
-    flow_gutter = flowacc(gutter_dem)
-
-    # identification of PP, watershed calculation
-    [p_glac, watersheds] = flowsheds(flow_gutter)
 
     # Allocation of flowsheds to individual glaciers
     # & Identification of sliver polygons
-    no_glaciers, all_polygon = merge_flowsheds(p_glac, watersheds)
+    #no_glaciers, all_polygon = merge_flowsheds(p_glac, watersheds)
 
     # delete files which are not needed anymore
     for file in os.listdir(os.path.dirname(input_shp)):
         for word in ['P_glac', 'flow', 'glaciers', 'all', 'gutter']:
             if file.startswith(word):
                 os.remove(os.path.join(os.path.dirname(input_shp), file))
-    return no_glaciers
-    '''
+    # return no_glaciers
