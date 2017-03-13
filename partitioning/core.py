@@ -565,6 +565,18 @@ def _split_glacier(gpd_obj, index, polygon):
     return gpd_obj
 
 
+def _smooth_dem(dem):
+    smoothed_dem = os.path.join(os.path.dirname(dem), 'smoothed.tif')
+    with rasterio.open(dem) as src:
+        array = src.read()
+        profile = src.profile
+    # apply a 5x5 median filter to each band
+    filtered = medfilt(array, (1, 5, 5)).astype('float32')
+    with rasterio.open(smoothed_dem, 'w', **profile) as dst:
+        dst.write(filtered)
+    return smoothed_dem
+
+
 def _transform_coord(tupel, transform):
     new_x = transform[0]+(tupel[1]+1)*transform[1]-transform[1]/2
     new_y = transform[3]+tupel[0]*transform[-1]-transform[1]/2
@@ -602,6 +614,7 @@ def _pour_points(dem):
                           geometry=new_coord['coordinates'],  crs=crs)
     pp_shp = os.path.join(os.path.dirname(dem), 'pour_points.shp')
     pp.to_file(pp_shp)
+    print len(pp)
     return pp_shp
 
 
@@ -635,8 +648,9 @@ def preprocessing(dem, shp, saga_cmd=None):
     global out1
     pixelsize = 40
 
+    smoothed_dem = _smooth_dem(dem)
     # fill pits
-    filled_dem = _fill_pits_with_saga(dem, saga_cmd=saga_cmd)
+    filled_dem = _fill_pits_with_saga(smoothed_dem, saga_cmd=saga_cmd)
 
     # read outlines with gdal
     out1 = gpd.read_file(shp)

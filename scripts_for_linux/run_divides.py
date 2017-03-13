@@ -34,7 +34,7 @@ if __name__ == '__main__':
                    os.path.join(gdir.dir, 'outlines.dbf')]
         for file in to_copy:
             shutil.copy(file, os.path.join(gdir.dir, 'divide_01'))
-        # if gdir.rgi_id == RGI:
+        #if gdir.rgi_id == RGI:
         n = dividing_glaciers(input_dem, input_shp)
         print gdir.rgi_id, 'no glaciers:', n
         '''
