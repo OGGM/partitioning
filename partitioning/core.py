@@ -9,11 +9,13 @@ import rasterio
 from rasterio.mask import mask
 from pygeoprocessing import routing
 import geopandas as gpd
+from scipy.signal import medfilt
 
 from skimage import img_as_float
 from skimage.feature import peak_local_max
 from shapely.geometry import Point, Polygon, MultiPolygon
 from shapely.ops import cascaded_union
+import matplotlib.pyplot as plt
 
 
 def _raster_mask(input_dem, polygon, out_name):
@@ -34,15 +36,9 @@ def _raster_mask(input_dem, polygon, out_name):
     """
 
     output_dem = os.path.join(os.path.dirname(input_dem), out_name+'.tif')
+
     geoms = [mapping(polygon)]
-    '''
-    if os.path.basename(shp) == 'outlines.shp':
-        geoms = [mapping(co.buffer(buffersize))]
-        #geoms = [mapping(shape(outlines['geometry']).buffer(buffersize))]
-    else:
-        with fiona.open(shp, "r") as shapefile:
-            geoms = [mapping(shape(shapefile.next()['geometry']).buffer(buffersize))]
-    '''
+
     with rasterio.open(input_dem) as src:
         out_image, out_transform = mask(src, geoms, nodata=np.nan, crop=False)
         out_meta = src.meta.copy()
@@ -54,6 +50,7 @@ def _raster_mask(input_dem, polygon, out_name):
                      "transform": out_transform})
     with rasterio.open(output_dem, "w", **out_meta) as dest:
         dest.write(out_image)
+
     return output_dem
 
 
@@ -118,12 +115,22 @@ def flowshed_calculation(dem, shp):
     routing.delineate_watershed(dem, shp, 0, 100, watershed_dir,
                                 os.path.join(dir, 'snapped_outlet_points.shp'),
                                 os.path.join(dir, 'stream_out_uri.tif'))
-    watersheds = gpd.read_file(watershed_dir)
+    watersheds = gpd.read_file(watershed_dir).buffer(0)
     pour_points = gpd.read_file(dir + '/pour_points.shp')
     flowsheds = gpd.GeoSeries(watersheds.intersection(co), crs=crs)
     # remove empty objects
-    flowsheds = flowsheds[flowsheds.type != 'GeometryCollection']
 
+    flowsheds = flowsheds[(~flowsheds.is_empty) & (flowsheds.type != 'Point')
+                          & (flowsheds.type != 'MultiPoint')
+                          & (flowsheds.type != 'LineString')
+                          & (flowsheds.type != 'MultiLineString')]
+    collections = flowsheds[flowsheds.type == 'GeometryCollection']
+    for index in collections.index:
+        multi = MultiPolygon()
+        for geo in collections.loc[index]:
+            if geo.type is 'Polygon':
+                multi = multi.union(geo)
+        flowsheds.loc[index] = multi
     # if object is Multipolygon split it
     for i, shed in enumerate(flowsheds):
         if shed.type is 'MultiPolygon':
@@ -197,7 +204,8 @@ def _intersection_of_glaciers(gpd_obj, index):
     gpd_obj = gpd_obj.intersection(gpd_obj.loc[index, 'geometry'])
     gpd_obj = gpd.GeoDataFrame(geometry=gpd_obj[gpd_obj.index != index],
                                crs=crs)
-    gpd_obj = _make_polygon(gpd_obj)
+    if not gpd_obj.empty:
+        gpd_obj = _make_polygon(gpd_obj)
     return gpd_obj
 
 
@@ -225,21 +233,30 @@ def merge_flows(shed_shp, pour_point_shp):
     start = time.time()
     p_glac_dir = os.path.join(os.path.dirname(pour_point_shp), 'p_glac.shp')
     p_glac = _create_p_glac(pour_point_shp)
+    p_glac.to_file(p_glac_dir)
 
     flows = gpd.read_file(shed_shp)
-
-    # merge overlaps (p_glac,flowsheds)
+    # merge overlaps (p_glac, flowsheds)
     for j in p_glac.index:
         overlaps = flows[flows.intersects(p_glac.loc[j, 'geometry'])]
+
         if len(overlaps) > 1:
-            flows.loc[overlaps.index[0], 'geometry'] = cascaded_union(
-                overlaps.loc[:, 'geometry'])
+            union = cascaded_union(overlaps.loc[:, 'geometry'])
+            #flows.loc[overlaps.index[0], 'geometry'] = union
+            flows.set_value(overlaps.index[0], 'geometry', union)
             del_ids = overlaps.index.drop(overlaps.index[0])
             flows = flows.loc[flows.index.difference(del_ids)]
 
     slivers = flows[flows.geometry.apply(_is_sliver)]
     glaciers = flows.loc[flows.index.difference(slivers.index)]
-
+    # add gaps
+    difference = co.difference(cascaded_union(flows.geometry))
+    if (difference.type is 'Polygon') and (difference.area > 0.1):
+        glaciers = _merge_sliver(glaciers, difference)
+    if difference.type is 'MultiPolygon':
+        for polygon in difference:
+            if polygon.area > 0.1:
+                glaciers = _merge_sliver(glaciers, polygon)
     # merge slivers to glaciers
     for k in slivers.index:
         sliver = slivers.loc[k, 'geometry']
@@ -248,6 +265,9 @@ def merge_flows(shed_shp, pour_point_shp):
     # correct overlapping of glaciers
     for id in glaciers.index:
         glaciers = _merge_overlaps(glaciers, id)
+
+    for id in glaciers.index:
+        glaciers = _split_overlaps(glaciers, id)
 
     # save glaciers
     i = 1
@@ -262,9 +282,11 @@ def merge_flows(shed_shp, pour_point_shp):
 
         divide = gpd.GeoDataFrame([divide], geometry=[divide.geometry],
                                   crs=crs)
+        divide = _make_polygon(divide)
         divide.to_file(os.path.join(divide_shp, 'outlines.shp'))
         i += 1
     print 'finish flows :', time.time()-start
+    return len(glaciers)
 
 '''
 def merge_flowsheds(p_glac_dir, watershed_dir):
@@ -442,11 +464,12 @@ def merge_sliver_poly(glacier_poly, polygon):
 
 
 def _make_polygon(gpd_obj):
+
     gpd_obj = gpd_obj[(gpd_obj.type == 'GeometryCollection') |
                       (gpd_obj.type == 'Polygon') |
                       (gpd_obj.type == 'MultiPolygon')]
     if not gpd_obj.empty:
-        collection = gpd_obj[(gpd_obj.type == 'GeometryCollection')]
+        collection = gpd_obj[(~gpd_obj.is_empty) & (gpd_obj.type == 'GeometryCollection')]
         # choose only polygons or multipolygons
         for c in collection.index:
             geo = collection.loc[c, 'geometry']
@@ -475,9 +498,13 @@ def _is_sliver(polygon):
 
 
 def _merge_sliver(gpd_obj, polygon):
-    max_b = np.argmax(gpd_obj.intersection(polygon.boundary).length)
-    gpd_obj.loc[max_b, 'geometry'] = gpd_obj.loc[max_b, 'geometry'].\
-        union(polygon)
+    intersection_array = gpd_obj.intersection(polygon.boundary).length
+    if np.max(intersection_array) != 0:
+        max_b = np.argmax(intersection_array)
+        geom = gpd_obj.loc[max_b, 'geometry'].union(polygon.buffer(0))
+        #if geom.type is 'MultiPolygon':
+            #geom = geom.buffer(0.0001)
+        gpd_obj.loc[max_b, 'geometry'] = geom
     return gpd_obj
 
 
@@ -503,14 +530,18 @@ def _merge_overlaps(gpd_obj, l):
                 inter = _intersection_of_glaciers(gpd_obj, l)
                 to_merge = inter.area / gpd_obj.loc[l, 'geometry'].area > 0.5
                 merge = inter[to_merge]
+    return gpd_obj
 
-        split = _intersection_of_glaciers(gpd_obj, l)
-        for k in split.index:
-            if gpd_obj.loc[l, 'geometry'].area > gpd_obj.loc[k,
-                                                             'geometry'].area:
-                gpd_obj = _split_glacier(gpd_obj, k, split.loc[k, 'geometry'])
-            else:
-                gpd_obj = _split_glacier(gpd_obj, l, split.loc[k, 'geometry'])
+
+def _split_overlaps(gpd_obj, l):
+
+    split = _intersection_of_glaciers(gpd_obj, l)
+    for k in split.index:
+        if gpd_obj.loc[l, 'geometry'].area > gpd_obj.loc[k,
+                                                         'geometry'].area:
+            gpd_obj = _split_glacier(gpd_obj, k, split.loc[k, 'geometry'])
+        else:
+            gpd_obj = _split_glacier(gpd_obj, l, split.loc[k, 'geometry'])
     return gpd_obj
 
 
@@ -544,6 +575,8 @@ def _transform_coord(tupel, transform):
 def _pour_points(dem):
     # open gutter with flow accumulation
     with rasterio.open(dem) as src:
+        # TODO: new rasterio version will return affine.Affine()
+        # --> order will change
         transform = src.transform
         band = np.array(src.read(1))
     im = img_as_float(band)
@@ -604,18 +637,11 @@ def preprocessing(dem, shp, saga_cmd=None):
 
     # fill pits
     filled_dem = _fill_pits_with_saga(dem, saga_cmd=saga_cmd)
-    '''
-    # read outlines.shp
-    with fiona.open(shp, 'r') as shapefile:
-        outlines = shapefile.next()
-        # crs = shapefile.crs
-        schema = shapefile.schema
-        # outlines['geometry'] = shape(outlines['geometry']).buffer(0)
-    '''
+
     # read outlines with gdal
     out1 = gpd.read_file(shp)
     crs = out1.crs
-    co = out1.loc[0, 'geometry']
+    co = out1.loc[0, 'geometry'].buffer(0)
 
     # mask dem along buffer1
     masked_dem = _raster_mask(filled_dem, co.buffer(4*pixelsize), 'masked')
@@ -644,7 +670,8 @@ def dividing_glaciers(input_dem, input_shp):
     gutter_dem = preprocessing(input_dem, input_shp)
     pour_points_dir = identify_pour_points(gutter_dem)
     flowsheds_dir = flowshed_calculation(gutter_dem, pour_points_dir)
-    merge_flows(flowsheds_dir, pour_points_dir)
+    no_glaciers = merge_flows(flowsheds_dir, pour_points_dir)
+
     # merge_flowsheds(p_glac, flowsheds_dir)
 
     # Allocation of flowsheds to individual glaciers
@@ -653,7 +680,7 @@ def dividing_glaciers(input_dem, input_shp):
 
     # delete files which are not needed anymore
     for file in os.listdir(os.path.dirname(input_shp)):
-        for word in ['P_glac', 'flow', 'glaciers', 'all', 'gutter']:
+        for word in ['P_glac',  'glaciers', 'all', 'gutter']:
             if file.startswith(word):
                 os.remove(os.path.join(os.path.dirname(input_shp), file))
-    # return no_glaciers
+    return no_glaciers
