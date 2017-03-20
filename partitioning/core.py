@@ -25,8 +25,8 @@ def _raster_mask(input_dem, polygon, out_name):
     ----------
     input_dem   : str
         path to the raster file
-    polygon     : Polygon
-        polygon along the raster will
+    polygon     : shapely.geometry.Polygon instance
+        outline polygon
     out_name    : str
         name of the output raster
 
@@ -55,12 +55,23 @@ def _raster_mask(input_dem, polygon, out_name):
 
 
 def _compactness(polygon):
+    """ check if polygon satisfy glacier compactness (Allen,1998)
+
+    Parameters
+    ----------
+    polygon: shapely.geometry.Polygon instance
+
+    Returns
+    -------
+    bool
+    """
     coord = np.array(polygon.exterior.coords)
-    # calculate max distance(perimeter)
+
     y_min = Point(coord[np.argmin(coord[:, 1])])
     y_max = Point(coord[np.argmax(coord[:, 1])])
     x_min = Point(coord[np.argmin(coord[:, 0])])
     x_max = Point(coord[np.argmax(coord[:, 0])])
+    # calculate max distance(perimeter)
     max_dist = y_min.distance(y_max)
     x_dist = x_min.distance(x_max)
     if x_dist > max_dist:
@@ -72,6 +83,19 @@ def _compactness(polygon):
 
 
 def _fill_pits_with_saga(dem, saga_cmd=None):
+    """ fill pits with SAGA GIS
+
+    Parameters
+    ----------
+    dem     : str
+        path to the raster file
+    saga_cmd:   str
+        path to saga_cmd.exe (only needen on windows system)
+
+    Returns
+    -------
+    path to the new raster file
+    """
     saga_dir = os.path.join(os.path.dirname(dem), 'saga')
     if not os.path.exists(saga_dir):
         # create folder for saga_output
@@ -92,6 +116,18 @@ def _fill_pits_with_saga(dem, saga_cmd=None):
 
 
 def _flowacc(input_dem):
+    """create a raster which only contains flowaccumulation at the gutter,
+    used for pour_point identification
+
+    Parameters
+    ----------
+    input_dem   : str
+        path to a raster file
+
+    Returns
+    -------
+    path to raster file with the flow accumulation gutter
+    """
     flow_direction = os.path.join(os.path.dirname(input_dem), 'flow_dir.tif')
     flow_accumulation = os.path.join(os.path.dirname(input_dem),
                                      'flow_accumulation.tif')
@@ -108,11 +144,25 @@ def _flowacc(input_dem):
 
 
 def flowshed_calculation(dem, shp):
+    """ calculate flowsheds
+
+    Parameters
+    ----------
+    dem : str
+        path to a raster file
+    shp : str
+        path to a shape file
+
+    Returns
+    -------
+    path to the shape file containing all the flowsheds
+    (shapely.geometry.Polygon)
+    """
     dir = os.path.dirname(dem)
     watershed_dir = os.path.join(dir, 'all_watersheds.shp')
     flowshed_dir = os.path.join(dir, 'flowshed.shp')
     # calculate watersheds
-    routing.delineate_watershed(dem, shp, 0, 100, watershed_dir,
+    routing.delineate_watershed(dem, shp, 1, 100, watershed_dir,
                                 os.path.join(dir, 'snapped_outlet_points.shp'),
                                 os.path.join(dir, 'stream_out_uri.tif'))
     watersheds = gpd.read_file(watershed_dir).buffer(0)
@@ -190,7 +240,17 @@ def _gutter(masked_dem, depth):
 
 
 def identify_pour_points(dem):
+    """ create flow accumulation gutter and identify pour points
 
+    Parameters
+    ----------
+    dem :   str
+        path to the raster file
+
+    Returns
+    -------
+    path to a shape file containing all pour points
+    """
     # calculation of flow accumulation and flow direction
     flow_gutter = _flowacc(dem)
 
@@ -247,20 +307,33 @@ def merge_flows(shed_shp, pour_point_shp):
             del_ids = overlaps.index.drop(overlaps.index[0])
             flows = flows.loc[flows.index.difference(del_ids)]
 
-    slivers = flows[flows.geometry.apply(_is_sliver)]
-    glaciers = flows.loc[flows.index.difference(slivers.index)]
     # add gaps
     difference = co.difference(cascaded_union(flows.geometry))
+    # gpd.GeoDataFrame(geometry=[difference], crs=crs).plot()
     if (difference.type is 'Polygon') and (difference.area > 0.1):
-        glaciers = _merge_sliver(glaciers, difference)
+        glaciers, done = _merge_sliver(flows, difference)
+    last_sliver = []
     if difference.type is 'MultiPolygon':
         for polygon in difference:
             if polygon.area > 0.1:
-                glaciers = _merge_sliver(glaciers, polygon)
+                glaciers, done = _merge_sliver(flows, polygon)
+                if not done:
+                    last_sliver.append(polygon)
+    slivers = flows[flows.geometry.apply(_is_sliver)]
+    glaciers = flows.loc[flows.index.difference(slivers.index)]
+    if len(glaciers) <= 1:
+        return 1
+    glaciers.to_file(os.path.join(os.path.dirname(pour_point_shp), 'glaciers.shp'))
+    slivers.to_file(os.path.join(os.path.dirname(pour_point_shp), 'slivers.shp'))
     # merge slivers to glaciers
     for k in slivers.index:
         sliver = slivers.loc[k, 'geometry']
-        glaciers = _merge_sliver(glaciers, sliver)
+        glaciers, done = _merge_sliver(glaciers, sliver)
+        if not done:
+            last_sliver.append(sliver)
+
+    for polygon in last_sliver:
+        glaciers, done = _merge_sliver(glaciers, polygon)
 
     # correct overlapping of glaciers
     for id in glaciers.index:
@@ -285,7 +358,7 @@ def merge_flows(shed_shp, pour_point_shp):
         divide = _make_polygon(divide)
         divide.to_file(os.path.join(divide_shp, 'outlines.shp'))
         i += 1
-    print 'finish flows :', time.time()-start
+    print ('finish flows :', time.time()-start)
     return len(glaciers)
 
 '''
@@ -490,6 +563,7 @@ def _p_glac_radius(a, b, f):
 
 
 def _is_sliver(polygon):
+
     if polygon.area < 100000 or (polygon.area < 200000 and _compactness(
             polygon)):
         return True
@@ -502,10 +576,12 @@ def _merge_sliver(gpd_obj, polygon):
     if np.max(intersection_array) != 0:
         max_b = np.argmax(intersection_array)
         geom = gpd_obj.loc[max_b, 'geometry'].union(polygon.buffer(0))
-        #if geom.type is 'MultiPolygon':
-            #geom = geom.buffer(0.0001)
-        gpd_obj.loc[max_b, 'geometry'] = geom
-    return gpd_obj
+        gpd_obj.set_value(max_b, 'geometry', geom)
+        merged = True
+    # sliver does not touch glacier at the moment. Try again in the end
+    else:
+        merged = False
+    return [gpd_obj, merged]
 
 
 def _merge_overlaps(gpd_obj, l):
@@ -551,17 +627,17 @@ def _split_glacier(gpd_obj, index, polygon):
         if not _is_sliver(diff):
             gpd_obj.loc[index, 'geometry'] = diff
         else:
-            gpd_obj = _merge_sliver(gpd_obj, diff)
+            gpd_obj, done = _merge_sliver(gpd_obj, diff)
     else:
         # choose largest polygon
         max_poly = np.argmax([obj.area for obj in diff])
         if not _is_sliver(diff[max_poly]):
             gpd_obj.loc[index, 'geometry'] = diff[max_poly]
         else:
-            gpd_obj = _merge_sliver(gpd_obj, diff[max_poly])
+            gpd_obj, done = _merge_sliver(gpd_obj, diff[max_poly])
         # rest merged as sliver polygon
         rest = diff.difference(diff[max_poly])
-        gpd_obj = _merge_sliver(gpd_obj, rest)
+        gpd_obj, done = _merge_sliver(gpd_obj, rest)
     return gpd_obj
 
 
@@ -614,7 +690,6 @@ def _pour_points(dem):
                           geometry=new_coord['coordinates'],  crs=crs)
     pp_shp = os.path.join(os.path.dirname(dem), 'pour_points.shp')
     pp.to_file(pp_shp)
-    print len(pp)
     return pp_shp
 
 
@@ -694,7 +769,7 @@ def dividing_glaciers(input_dem, input_shp):
 
     # delete files which are not needed anymore
     for file in os.listdir(os.path.dirname(input_shp)):
-        for word in ['P_glac',  'glaciers', 'all', 'gutter']:
+        for word in ['P_glac', 'all']:
             if file.startswith(word):
                 os.remove(os.path.join(os.path.dirname(input_shp), file))
     return no_glaciers
