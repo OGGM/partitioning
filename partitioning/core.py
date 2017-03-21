@@ -340,8 +340,8 @@ def merge_flows(shed_shp, pour_point_shp):
         glaciers = _merge_overlaps(glaciers, id)
 
     for id in glaciers.index:
-        glaciers = _split_overlaps(glaciers, id)
-
+        if id in glaciers.index:
+            glaciers = _split_overlaps(glaciers, id)
     # save glaciers
     i = 1
     for id in glaciers.index:
@@ -585,6 +585,7 @@ def _merge_sliver(gpd_obj, polygon):
 
 
 def _merge_overlaps(gpd_obj, l):
+
     if l in gpd_obj.index:
         inter = _intersection_of_glaciers(gpd_obj, l)
         # if intersection area  > 50%
@@ -623,11 +624,14 @@ def _split_overlaps(gpd_obj, l):
 
 def _split_glacier(gpd_obj, index, polygon):
     diff = gpd_obj.loc[index, 'geometry'].difference(polygon)
+
     if diff.type is 'Polygon':
         if not _is_sliver(diff):
             gpd_obj.loc[index, 'geometry'] = diff
         else:
+            gpd_obj = gpd_obj[gpd_obj.index != index]
             gpd_obj, done = _merge_sliver(gpd_obj, diff)
+
     else:
         # choose largest polygon
         max_poly = np.argmax([obj.area for obj in diff])
@@ -755,8 +759,11 @@ def dividing_glaciers(input_dem, input_shp):
     -------
     number of divides (int)
     """
-
-    gutter_dem = preprocessing(input_dem, input_shp)
+    if sys.platform.startswith('win'):
+        saga_cmd = 'C:\\"Program Files"\\SAGA-GIS\\saga_cmd.exe'
+        gutter_dem = preprocessing(input_dem, input_shp, saga_cmd=saga_cmd)
+    else:
+        gutter_dem = preprocessing(input_dem, input_shp)
     pour_points_dir = identify_pour_points(gutter_dem)
     flowsheds_dir = flowshed_calculation(gutter_dem, pour_points_dir)
     no_glaciers = merge_flows(flowsheds_dir, pour_points_dir)

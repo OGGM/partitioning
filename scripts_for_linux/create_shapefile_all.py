@@ -68,4 +68,5 @@ if __name__ == '__main__':
                 all_divides = all_divides.append(div_co, ignore_index=True)
     all_divides.to_file(ALL_DIVIDES)
     pickle.dump(divided, open(os.path.join(base_dir, 'divided.pkl'), "wb"))
+    print len(divided)
 

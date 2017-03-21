@@ -31,8 +31,8 @@ if __name__ == '__main__':
                'RGI50-11.03831', 'RGI50-11.03832', 'RGI50-11.03833',
                'RGI50-11.03834', 'RGI50-11.03835', 'RGI50-11.03836']
 
-    ID_s = pickle.load(open(os.path.join(base_dir, 'divided.pkl')))[0]
-    ID_s = "RGI50-11.01791"
+    ID_s = pickle.load(open(os.path.join(base_dir, 'divided.pkl')))
+    #ID_s = "RGI50-11.01791"
     indices = [(i in ID_s) for i in rgidf.RGIId]
     gdirs = workflow.init_glacier_regions(rgidf[indices])
     failed = []
