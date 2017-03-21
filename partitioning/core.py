@@ -611,14 +611,14 @@ def _merge_overlaps(gpd_obj, l):
 
 
 def _split_overlaps(gpd_obj, l):
-
     split = _intersection_of_glaciers(gpd_obj, l)
     for k in split.index:
-        if gpd_obj.loc[l, 'geometry'].area > gpd_obj.loc[k,
-                                                         'geometry'].area:
-            gpd_obj = _split_glacier(gpd_obj, k, split.loc[k, 'geometry'])
-        else:
-            gpd_obj = _split_glacier(gpd_obj, l, split.loc[k, 'geometry'])
+        if l in gpd_obj.index and k in gpd_obj.index:
+            if gpd_obj.loc[l, 'geometry'].area > gpd_obj.loc[k,
+                                                             'geometry'].area:
+                gpd_obj = _split_glacier(gpd_obj, k, split.loc[k, 'geometry'])
+            else:
+                gpd_obj = _split_glacier(gpd_obj, l, split.loc[k, 'geometry'])
     return gpd_obj
 
 
@@ -638,6 +638,7 @@ def _split_glacier(gpd_obj, index, polygon):
         if not _is_sliver(diff[max_poly]):
             gpd_obj.loc[index, 'geometry'] = diff[max_poly]
         else:
+            gpd_obj = gpd_obj[gpd_obj.index != index]
             gpd_obj, done = _merge_sliver(gpd_obj, diff[max_poly])
         # rest merged as sliver polygon
         rest = diff.difference(diff[max_poly])
