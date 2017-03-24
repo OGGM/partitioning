@@ -22,6 +22,8 @@ if __name__ == '__main__':
     cfg.PARAMS['d1'] = 40
     cfg.PARAMS['dmax'] = 40
 
+    cfg.PARAMS['border'] = 10
+
     RUN_DIVIDES = False
 
     no_topo = ['RGI50-11.03813', 'RGI50-11.03814', 'RGI50-11.03815',
@@ -35,10 +37,10 @@ if __name__ == '__main__':
     failed_topo = ['RGI50-11.00548', 'RGI50-11.03396']
     rgidf = salem.read_shapefile(RGI_FILE, cached=True)
     ID_s = pickle.load(open(os.path.join(base_dir, 'divided.pkl')))
-    #ID_s = ['RGI50-11.03957']
 
     indices = [((i in ID_s) and (i not in failed_topo)) for i in rgidf.RGIId]
-    gdirs_orig = workflow.init_glacier_regions(rgidf[indices], reset=False)
+    #indices = [((i in ID_s)) for i in rgidf.RGIId]
+    gdirs_orig = workflow.init_glacier_regions(rgidf[indices], reset=True)
 
     cfg.PATHS['working_dir'] = base_dir
     gdirs = workflow.init_glacier_regions(rgidf[indices], reset=False)
@@ -57,4 +59,5 @@ if __name__ == '__main__':
         graphics.plot_centerlines(gdir_orig, ax=ax1)
         graphics.plot_centerlines(gdirs[i], ax=ax0)
         plt.savefig(os.path.join(base_dir, 'plots', str(gdir_orig.rgi_id) + '.png'))
+        #plt.show()
         plt.close()

@@ -19,9 +19,11 @@ if __name__ == '__main__':
     # set dem to 40 meters
     cfg.PARAMS['d1'] = 40
     cfg.PARAMS['dmax'] = 40
+    cfg.PARAMS['border'] = 10
 
     rgidf = salem.read_shapefile(RGI_FILE, cached=True)
 
+    # no topo in alps
     no_topo = ['RGI50-11.03813', 'RGI50-11.03814', 'RGI50-11.03815',
                'RGI50-11.03816', 'RGI50-11.03817', 'RGI50-11.03818',
                'RGI50-11.03819', 'RGI50-11.03820', 'RGI50-11.03821',
@@ -32,12 +34,11 @@ if __name__ == '__main__':
                'RGI50-11.03834', 'RGI50-11.03835', 'RGI50-11.03836']
 
     ID_s = pickle.load(open(os.path.join(base_dir, 'divided.pkl')))
-    #ID_s = "RGI50-11.01791"
-    indices = [(i in ID_s) for i in rgidf.RGIId]
-    gdirs = workflow.init_glacier_regions(rgidf[indices])
+    indices = [(i not in no_topo) and (i in ID_s) for i in rgidf.RGIId]
+    gdirs = workflow.init_glacier_regions(rgidf[indices], reset=True)
+
     failed = []
     for gdir in gdirs:
-
         input_shp = gdir.get_filepath('outlines', div_id=0)
         input_dem = gdir.get_filepath('dem', div_id=0)
         for fol in os.listdir(gdir.dir):
@@ -51,4 +52,5 @@ if __name__ == '__main__':
 
         n = dividing_glaciers(input_dem, input_shp)
         print gdir.rgi_id, 'no glaciers:', n
+
 
