@@ -1,6 +1,6 @@
 
 import salem
-from oggm import workflow,cfg,graphics,tasks
+from oggm import workflow, cfg, graphics, tasks
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import pickle

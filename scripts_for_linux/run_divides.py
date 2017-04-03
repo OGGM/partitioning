@@ -1,11 +1,11 @@
-from oggm import workflow, cfg
+from oggm import workflow, cfg, tasks
 import salem
 import geopandas as gpd
 import shutil
 import os
 import pickle
 from partitioning.core import dividing_glaciers
-import pickle
+from oggm.workflow import execute_entity_task
 
 if __name__ == '__main__':
     cfg.initialize()
@@ -32,11 +32,10 @@ if __name__ == '__main__':
                'RGI50-11.03828', 'RGI50-11.03829', 'RGI50-11.03830',
                'RGI50-11.03831', 'RGI50-11.03832', 'RGI50-11.03833',
                'RGI50-11.03834', 'RGI50-11.03835', 'RGI50-11.03836']
-
-    ID_s = pickle.load(open(os.path.join(base_dir, 'divided.pkl')))
-    indices = [(i not in no_topo) and (i in ID_s) for i in rgidf.RGIId]
-    gdirs = workflow.init_glacier_regions(rgidf[indices], reset=True)
-
+    ID_s = ['RGI50-11.00548', 'RGI50-11.03396']
+    #ID_s = pickle.load(open(os.path.join(base_dir, 'divided.pkl')))
+    indices = [(i in ID_s) for i in rgidf.RGIId]
+    gdirs = workflow.init_glacier_regions(rgidf[indices], reset=False)
     failed = []
     for gdir in gdirs:
         input_shp = gdir.get_filepath('outlines', div_id=0)
@@ -51,6 +50,8 @@ if __name__ == '__main__':
             shutil.copy(file, os.path.join(gdir.dir, 'divide_01'))
 
         n = dividing_glaciers(input_dem, input_shp)
-        print gdir.rgi_id, 'no glaciers:', n
 
+    task_list = [tasks.glacier_masks]
+    for task in task_list:
+        execute_entity_task(task, gdirs)
 
