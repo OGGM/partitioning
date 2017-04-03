@@ -1,4 +1,5 @@
-# partitioning
+partitioning
+------------
 
 Many  glaciological applications uses glacier outlines provided by the Randolph Glacier
 Inventory (RGI) `Pfeffer et al., (2014)`_.
