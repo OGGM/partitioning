@@ -3,7 +3,7 @@ partitioning
 ============
 
 Many  glaciological applications(e.g OGGM) uses glacier outlines provided by the `Randolph Glacier
-Inventory`_(RGI).
+Inventory`_ (RGI).
 In some cases these outlines represent a "glacier complex" and not those of a single glacier.
 This results in incorrect calculations, especially as the model is developed to handle glaciers individually.
 
