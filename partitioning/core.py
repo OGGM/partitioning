@@ -15,7 +15,7 @@ from skimage import img_as_float
 from skimage.feature import peak_local_max
 from shapely.geometry import Point, Polygon, MultiPolygon
 from shapely.ops import cascaded_union
-import matplotlib.pyplot as plt
+
 
 
 def _raster_mask(input_dem, polygon, out_name):
@@ -297,7 +297,7 @@ def _create_p_glac(shp):
     """
     pp = gpd.read_file(shp)
     geoms = [co.intersection(pp.loc[i, 'geometry'].buffer(
-        _p_glac_radius(14.3, 0.5,3500, pp.loc[i, 'flowacc']))) for i in pp.index]
+        _p_glac_radius(14.3, 0.5, 3500, pp.loc[i, 'flowacc']))) for i in pp.index]
     p_glac = gpd.GeoDataFrame(geometry=geoms, crs=crs)
 
     # delete empty objects
@@ -340,10 +340,10 @@ def merge_flows(shed_shp, pour_point_shp):
     p_glac.to_file(p_glac_dir)
 
     flows = gpd.read_file(shed_shp)
+
     # merge overlaps (p_glac, flowsheds)
     for j in p_glac.index:
         overlaps = flows[flows.intersects(p_glac.loc[j, 'geometry'])]
-
         if len(overlaps) > 1:
             union = cascaded_union(overlaps.loc[:, 'geometry'])
             flows.set_value(overlaps.index[0], 'geometry', union)
@@ -367,7 +367,8 @@ def merge_flows(shed_shp, pour_point_shp):
     if len(glaciers) <= 1:
         return 1
     glaciers.to_file(os.path.join(os.path.dirname(pour_point_shp), 'glaciers.shp'))
-    slivers.to_file(os.path.join(os.path.dirname(pour_point_shp), 'slivers.shp'))
+    if not slivers.empty:
+        slivers.to_file(os.path.join(os.path.dirname(pour_point_shp), 'slivers.shp'))
     # merge slivers to glaciers
     for k in slivers.index:
         sliver = slivers.loc[k, 'geometry']
@@ -401,7 +402,7 @@ def merge_flows(shed_shp, pour_point_shp):
         divide = _make_polygon(divide)
         divide.to_file(os.path.join(divide_shp, 'outlines.shp'))
         i += 1
-    print ('finish flows :', time.time()-start)
+    print('finish flows :', time.time()-start)
     return len(glaciers)
 
 
