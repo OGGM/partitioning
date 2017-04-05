@@ -15,9 +15,21 @@ described algorithm in `Kienholz et al., (2013)`_ all used software packages are
 
 Requirements
 ------------
-- Python 2.7
-- `GDAL`_
-- `SAGA`_
+software:
+
+    - Python 2.7
+    - `GDAL`_
+    - `SAGA`_
+
+Python packages:
+
+    - scipy
+    - numpy
+    - rasterio
+    - geopandas
+    - shapely
+    - skimage
+    - pygeoprocessing
 
 .. _Randolph Glacier Inventory: http://www.ingentaconnect.com/content/igsoc/jog/2014/00000060/00000221/art00012
 .. _Kienholz et al., (2013): http://www.ingentaconnect.com/contentone/igsoc/jog/2013/00000059/00000217/art00011
