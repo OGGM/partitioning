@@ -29,6 +29,7 @@ software:
     - `GDAL`_
     - `SAGA`_
 
+    At the moment package dependencies requires to run the algortihm with a Python 2.7 version
 Python packages:
 
     - scipy
