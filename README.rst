@@ -51,7 +51,7 @@ The required input data is a glacier outline, obtained from `Randolph Glacier In
 elevation model (DEM) with a resolution of 40 m.
 You can run the algorithm with the following lines:
 
-.. code-block:: python2.7
+.. code-block:: python
 
     import os
     from partitioning.core import dividing_glaciers
@@ -63,6 +63,8 @@ You can run the algorithm with the following lines:
     #run dividing algorithm
     n = dividing_glaciers(input_shp=shp, input_dem=dem)
     print 'number of divides:', n
+
+The function creates automatically a subdirectory for each divide, where the resulting shapefile is located.
 
 .. _OGGM: http://oggm.readthedocs.io/en/latest/
 .. _Randolph Glacier Inventory: http://www.ingentaconnect.com/content/igsoc/jog/2014/00000060/00000221/art00012
