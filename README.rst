@@ -7,7 +7,7 @@ Inventory`_ (RGI).
 In some cases these outlines represent a "glacier complex" and not those of a single glacier.
 This results in incorrect calculations, especially as the model is developed to handle glaciers individually.
 
-.. image:: _pictures/RGI50-11.01791.png
+.. figure:: _pictures/RGI50-11.01791.png
 
     centerlines of RGI50-11.01791 computed with outlines provided by RGI(left) and for each single glacier after dividing(right)
 
