@@ -41,7 +41,7 @@ Python packages:
 
 Get the code
 ------------
-All the needed code for this project is available on GitHub. Clone the git repository::
+The code of this project is available on GitHub. Clone the git repository::
 
     git clone https://github.com/OGGM/partitioning.git
 
