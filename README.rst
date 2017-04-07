@@ -25,19 +25,19 @@ Requirements
 ------------
 software:
 
-    - Python 2.7 (caused by package dependencies)
-    - `GDAL`_
-    - `SAGA`_
+- Python 2.7 (caused by package dependencies)
+- `GDAL`_
+- `SAGA`_
 
 Python packages:
 
-    - scipy
-    - numpy
-    - rasterio
-    - geopandas
-    - shapely
-    - skimage
-    - pygeoprocessing
+- scipy
+- numpy
+- rasterio
+- geopandas
+- shapely
+- skimage
+- pygeoprocessing
 
 Get the code
 ------------
@@ -48,7 +48,7 @@ All the needed code for this project is available on GitHub. Clone the git repos
 Usage
 -----
 The required input data is a single glacier outline and a digital elevation model (DEM) with a resolution of 40 m.
-Note, that `OGGM`_ prepares a map and a DEM for each glacier using a valid `RGI`_ file.
+Note, that you can use `OGGM`_ to prepare the shapefile and the DEM for each glacier using a valid `RGI`_ file.
 
 You can run the algorithm with the following lines:
 
