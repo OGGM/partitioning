@@ -9,7 +9,7 @@ This results in incorrect calculations, especially as the model is developed to 
 
 .. figure:: _pictures/RGI50-11.01791.png
 
-    centerlines of RGI50-11.01791 computed with outlines provided by RGI(left) and for each single glacier after dividing(right)
+    centerlines computed with outlines provided by RGI(left) and for each single glacier after dividing(right)
 
 Thus, a method seperating these complexes was developed by `Kienholz et al., (2013)`_. We have implemented this
 method in the Python programming language and currently use `SAGA`_ and `GDAL`_ functions. Compared to the
