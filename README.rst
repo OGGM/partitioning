@@ -47,8 +47,9 @@ All the needed code for this project is available on GitHub. Clone the git repos
 
 Usage
 -----
-The required input data is a glacier outline, obtained from `Randolph Glacier Inventory`_ and a digital
-elevation model (DEM) with a resolution of 40 m.
+The required input data is a single glacier outline and a digital elevation model (DEM) with a resolution of 40 m.
+Note, that `OGGM`_ prepares a map and a DEM for each glacier using a valid `RGI`_ file.
+
 You can run the algorithm with the following lines:
 
 .. code-block:: python
@@ -67,6 +68,7 @@ You can run the algorithm with the following lines:
 The function creates automatically a subdirectory for each divide, where the resulting shapefile is located.
 
 .. _OGGM: http://oggm.readthedocs.io/en/latest/
+.. _RGI: http://www.glims.org/RGI/
 .. _Randolph Glacier Inventory: http://www.ingentaconnect.com/content/igsoc/jog/2014/00000060/00000221/art00012
 .. _Kienholz et al., (2013): http://www.ingentaconnect.com/contentone/igsoc/jog/2013/00000059/00000217/art00011
 .. _SAGA: http://www.saga-gis.org/en/index.html
