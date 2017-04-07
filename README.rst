@@ -8,7 +8,6 @@ In some cases these outlines represent a "glacier complex" and not those of a si
 This results in incorrect calculations, especially as the model is developed to handle glaciers individually.
 
 .. figure:: _pictures/RGI50-11.01791.png
-    centerlines computed with outlines provided by RGI(left) and for each single glacier after dividing(right)
 
 Thus, a method seperating these complexes was developed by `Kienholz et al., (2013)`_. We have implemented this
 method in the Python programming language and currently use `SAGA`_ and `GDAL`_ functions. Compared to the
@@ -50,7 +49,9 @@ Usage
 -----
 The required input data is a glacier outline, obtained from `Randolph Glacier Inventory`_ and a digital
 elevation model (DEM) with a resolution of 40 m.
-You can run the algorithm with the following lines::
+You can run the algorithm with the following lines:
+.. code-block:: python
+
     import os
     from partitioning.core import dividing_glaciers
 
