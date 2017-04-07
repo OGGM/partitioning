@@ -8,7 +8,6 @@ In some cases these outlines represent a "glacier complex" and not those of a si
 This results in incorrect calculations, especially as the model is developed to handle glaciers individually.
 
 .. figure:: _pictures/RGI50-11.01791.png
-
     centerlines computed with outlines provided by RGI(left) and for each single glacier after dividing(right)
 
 Thus, a method seperating these complexes was developed by `Kienholz et al., (2013)`_. We have implemented this
@@ -40,6 +39,28 @@ Python packages:
     - shapely
     - skimage
     - pygeoprocessing
+
+Get the code
+------------
+All the needed code for this project is available on GitHub. Clone the git repository::
+
+    git clone https://github.com/OGGM/partitioning.git
+
+Usage
+-----
+The required input data is a glacier outline, obtained from `Randolph Glacier Inventory`_ and a digital
+elevation model (DEM) with a resolution of 40 m.
+You can run the algorithm with the following lines::
+    import os
+    from partitioning.core import dividing_glaciers
+
+    # set paths to the required input files
+    shp = os.path.join('path to dir', 'outlines.shp')
+    dem = os.path.join('path to dir', 'dem.tif')
+
+    #run dividing algorithm
+    n = dividing_glaciers(input_shp=shp, input_dem=dem)
+    print 'number of divides:', n
 
 .. _OGGM: http://oggm.readthedocs.io/en/latest/
 .. _Randolph Glacier Inventory: http://www.ingentaconnect.com/content/igsoc/jog/2014/00000060/00000221/art00012
