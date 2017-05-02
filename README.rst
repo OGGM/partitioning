@@ -131,6 +131,8 @@ With the following lines OGGM compute the centerlines and plot the result.
 Get in touch
 ------------
 Report bugs, share your ideas or view the source code on `GitHub`_.
+
+
 .. _OGGM: http://oggm.readthedocs.io/en/latest/
 .. _RGI: http://www.glims.org/RGI/
 .. _Randolph Glacier Inventory: http://www.ingentaconnect.com/content/igsoc/jog/2014/00000060/00000221/art00012
