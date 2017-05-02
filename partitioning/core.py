@@ -703,7 +703,7 @@ def _smooth_dem(dem):
 
 def _transform_coord(tupel, transform):
     """
-
+    transform pixel numbers to coordinates
     Parameters
     ----------
     tupel       : [int,int]
