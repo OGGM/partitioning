@@ -47,9 +47,12 @@ The code of this project is available on GitHub. Clone the git repository::
 
 Usage
 -----
-The required input data is a single glacier outline and a digital elevation model (DEM) with a resolution of 40 m.
+
+The required input data is glacier outline of a single glacier and a digital elevation model (DEM) with a resolution of 40 m.
 Note, that you can use `OGGM`_ to prepare the shapefile and the DEM for each glacier using a valid `RGI`_ file.
 
+First example - Python 2.7
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 You can run the algorithm with the following lines:
 
 .. code-block:: python
@@ -65,7 +68,54 @@ You can run the algorithm with the following lines:
     n = dividing_glaciers(input_shp=shp, input_dem=dem)
     print 'number of divides:', n
 
-The function creates automatically a subdirectory for each divide, where the resulting shapefile is located.
+This creates automatically a subdirectory for each divide, where a shapefile containing the outlines is located.
+
+Second example - Python 3 and OGGM
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+In a further example, we would like to show how to use the dividing algorithm together with `OGGM`_ in a Python 3 environment.
+As we will run the dividing algorithm as an external program, you have to install a Python 2.7 version with the required packages (above).
+
+We start with the usual first steps for OGGM:
+.. code-block::python
+
+    import os
+    from oggm import cfg, tasks, graphics, workflow
+    from oggm.utils import get_demo_file
+    import matplotlib.pyplot as plt
+    import geopandas as gpd
+
+    if __name__ == '__main__':
+
+        cfg.initialize()
+        cfg.set_divides_db()
+        cfg.PARAMS['use_multiprocessing'] = False
+        # set dem resolution to 40 meters
+        cfg.PARAMS['grid_dx_method'] = 'fixed'
+        cfg.PARAMS['fixed_dx'] = 40
+        cfg.PARAMS['border'] = 10
+
+        entity = gpd.read_file(get_demo_file('Hintereisferner.shp'))
+        hef = workflow.init_glacier_regions(entity, reset=False)[0]
+
+        # get path to the input data
+        input_shp = hef.get_filepath('outlines', div_id=0)
+        input_dem = hef.get_filepath('dem', div_id=0)
+
+We can use the get_filepath function to get the required input data. Next, we have to set the path to the Python 2.7 executable, where
+the pygeoprocessing package, as well as all the other required packages are installed. We also need the path from the partitioning package
+to call the dividing algortihm from the console.
+.. code-block::python
+
+        # set paths to python 2.7 and to the partitioning package
+        python = 'path to python 2.7'
+        project = 'path to the partitioning package'
+
+        script = os.path.join(project, 'partitioning/run_divides.py')
+
+        # run code from your console (PYTHON 2.7!)
+        os.system(python + ' ' + script + ' ' + input_shp + ' ' + input_dem)
+
+        print('Hintereisferner is divided into', hef.n_divides, 'parts.')
 
 .. _OGGM: http://oggm.readthedocs.io/en/latest/
 .. _RGI: http://www.glims.org/RGI/
