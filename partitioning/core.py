@@ -19,7 +19,6 @@ from shapely.geometry import Point, Polygon, MultiPolygon
 from shapely.ops import cascaded_union
 
 
-
 def _raster_mask(input_dem, polygon, out_name):
     """ mask a raster file along the polygon and saves the new raster
 
@@ -85,13 +84,27 @@ def _compactness(polygon):
 
 
 def _check_contain_divides(glacier_poly, id):
+    """
+    check if any object from glacier_poly contains glacier_poly.loc[id,
+    'geometry'] and correct it
+
+    Parameters
+    ----------
+    glacier_poly    : gpd.GeoDataFrame
+    id              : int
+
+    Returns
+    -------
+    gpd.GeoDataFrame
+    """
     exterior = glacier_poly.copy()
     for i in exterior.index:
-        exterior.loc[i, 'geometry'] = Polygon(exterior.loc[i, 'geometry'].exterior)
-    contains = glacier_poly[exterior.contains(glacier_poly.loc[id, 'geometry'])]
+        coord = exterior.loc[i, 'geometry'].exterior
+        exterior.loc[i, 'geometry'] = Polygon(coord)
+    contain = glacier_poly[exterior.contains(glacier_poly.loc[id, 'geometry'])]
     glacier_fid = [(glacier_poly.loc[j].FID) for j in glacier_poly.index]
-    for i in contains.index.drop(id):
-        if contains.loc[i].FID in glacier_fid:
+    for i in contain.index.drop(id):
+        if contain.loc[i].FID in glacier_fid:
             to_merge = glacier_poly.loc[id, 'geometry']
 
             glacier_poly = glacier_poly.loc[glacier_poly.index.drop(id), :]
@@ -115,7 +128,7 @@ def _fill_pits_with_saga(dem, saga_cmd=None):
     """
     saga_dir = os.path.join(os.path.dirname(dem), 'saga')
     if not os.path.exists(saga_dir):
-        # create folder for saga_output
+        # create directory for saga_output
         os.makedirs(saga_dir)
     saga_filled = os.path.join(saga_dir, 'filled.sdat')
     filled_dem = os.path.join(os.path.dirname(dem), 'filled_dem.tif')
@@ -311,9 +324,12 @@ def _create_p_glac(shp):
     -------
     gpd.GeoDataFrame with the P_glac areas
     """
+    a = 14.3
+    b = 0.5,
+    c = 3500
     pp = gpd.read_file(shp)
     geoms = [co.intersection(pp.loc[i, 'geometry'].buffer(
-        _p_glac_radius(14.3, 0.5, 3500, pp.loc[i, 'flowacc']))) for i in pp.index]
+        _p_glac_radius(a, b, c, pp.loc[i, 'flowacc']))) for i in pp.index]
     p_glac = gpd.GeoDataFrame(geometry=geoms, crs=crs)
 
     # delete empty objects
@@ -427,7 +443,7 @@ def merge_flows(shed_shp, pour_point_shp):
         divide = _make_polygon(divide)
         divide.to_file(os.path.join(divide_shp, 'outlines.shp'))
         i += 1
-    #print('finish flows :', time.time()-start)
+    # print('finish flows :', time.time()-start)
     return len(glaciers)
 
 
@@ -563,12 +579,12 @@ def _merge_sliver(gpd_obj, polygon):
 
 
 def _merge_overlaps(gpd_obj, l):
-    """correct glacier overlaps
+    """correct glacier overlaps from gpd_obj.loc[l, 'geometry]
 
     Parameters
     ----------
-    gpd_obj
-    l
+    gpd_obj : gpd.GeoDataFrame
+    l       : int
 
     Returns
     -------
@@ -599,6 +615,20 @@ def _merge_overlaps(gpd_obj, l):
 
 
 def _split_overlaps(gpd_obj, l):
+    """
+    if glaciers overlaps just a little bit (not more than 50 % of one of them),
+    the glacier will be split. The overlapping are will be related to the
+    bigger one.
+
+    Parameters
+    ----------
+    gpd_obj : gpd.GeoDataFrame object
+    l       : int
+
+    Returns
+    -------
+    gpd.GeoDataFrame object
+    """
     split = _intersection_of_glaciers(gpd_obj, l)
     for k in split.index:
         if l in gpd_obj.index and k in gpd_obj.index:
@@ -611,6 +641,19 @@ def _split_overlaps(gpd_obj, l):
 
 
 def _split_glacier(gpd_obj, index, polygon):
+    """
+    split the object
+
+    Parameters
+    ----------
+    gpd_obj : gpd.GeoDataFrame
+    index   : int
+    polygon : shapely.geometry object
+
+    Returns
+    -------
+    gpd.GeoDataFrame object
+    """
     diff = gpd_obj.loc[index, 'geometry'].difference(polygon)
 
     if diff.type is 'Polygon':
@@ -635,6 +678,18 @@ def _split_glacier(gpd_obj, index, polygon):
 
 
 def _smooth_dem(dem):
+    """
+    smooth the dem file (5x5 median filter is applied)
+
+    Parameters
+    ----------
+    dem :   str
+        path to the dem file
+
+    Returns
+    -------
+    str to the smoothed dem file
+    """
     smoothed_dem = os.path.join(os.path.dirname(dem), 'smoothed.tif')
     with rasterio.open(dem) as src:
         array = src.read()
@@ -647,6 +702,17 @@ def _smooth_dem(dem):
 
 
 def _transform_coord(tupel, transform):
+    """
+
+    Parameters
+    ----------
+    tupel       : [int,int]
+    transform   : transform object from rasterio
+
+    Returns
+    -------
+    shapely.geometry.Point object
+    """
     new_x = transform[0]+(tupel[1]+1)*transform[1]-transform[1]/2
     new_y = transform[3]+tupel[0]*transform[-1]-transform[1]/2
 
@@ -654,6 +720,17 @@ def _transform_coord(tupel, transform):
 
 
 def _pour_points(dem):
+    """
+
+    Parameters
+    ----------
+    dem : str
+        path to a dem file
+
+    Returns
+    -------
+    path to a shapefile containing all pour points
+    """
     # open gutter with flow accumulation
     with rasterio.open(dem) as src:
         # TODO: new rasterio version will return affine.Affine()
