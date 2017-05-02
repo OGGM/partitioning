@@ -85,22 +85,20 @@ We start with the usual first steps for OGGM:
     import matplotlib.pyplot as plt
     import geopandas as gpd
 
-    if __name__ == '__main__':
+    cfg.initialize()
+    cfg.set_divides_db()
+    cfg.PARAMS['use_multiprocessing'] = False
+    # set dem resolution to 40 meters
+    cfg.PARAMS['grid_dx_method'] = 'fixed'
+    cfg.PARAMS['fixed_dx'] = 40
+    cfg.PARAMS['border'] = 10
 
-        cfg.initialize()
-        cfg.set_divides_db()
-        cfg.PARAMS['use_multiprocessing'] = False
-        # set dem resolution to 40 meters
-        cfg.PARAMS['grid_dx_method'] = 'fixed'
-        cfg.PARAMS['fixed_dx'] = 40
-        cfg.PARAMS['border'] = 10
+    entity = gpd.read_file(get_demo_file('Hintereisferner.shp'))
+    hef = workflow.init_glacier_regions(entity, reset=False)[0]
 
-        entity = gpd.read_file(get_demo_file('Hintereisferner.shp'))
-        hef = workflow.init_glacier_regions(entity, reset=False)[0]
-
-        # get path to the input data
-        input_shp = hef.get_filepath('outlines', div_id=0)
-        input_dem = hef.get_filepath('dem', div_id=0)
+    # get path to the input data
+    input_shp = hef.get_filepath('outlines', div_id=0)
+    input_dem = hef.get_filepath('dem', div_id=0)
 
 We can use the get_filepath function to get the required input data. Next, we have to set the path to the Python 2.7 executable, where
 the pygeoprocessing package, as well as all the other required packages are installed. We also need the path from the partitioning package
@@ -108,16 +106,16 @@ to call the dividing algortihm from the console.
 
 .. code-block:: python
 
-            # set paths to python 2.7 and to the partitioning package
-            python = 'path to python 2.7'
-            project = 'path to the partitioning package'
+    # set paths to python 2.7 and to the partitioning package
+    python = 'path to python 2.7'
+    project = 'path to the partitioning package'
 
-            script = os.path.join(project, 'partitioning/run_divides.py')
+    script = os.path.join(project, 'partitioning/run_divides.py')
 
-            # run code from your console (PYTHON 2.7!)
-            os.system(python + ' ' + script + ' ' + input_shp + ' ' + input_dem)
+    # run code from your console (PYTHON 2.7!)
+    os.system(python + ' ' + script + ' ' + input_shp + ' ' + input_dem)
 
-            print('Hintereisferner is divided into', hef.n_divides, 'parts.')
+    print('Hintereisferner is divided into', hef.n_divides, 'parts.')
 
 
 .. _OGGM: http://oggm.readthedocs.io/en/latest/
