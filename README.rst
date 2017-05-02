@@ -77,7 +77,7 @@ As we will run the dividing algorithm as an external program, you have to instal
 
 We start with the usual first steps for OGGM:
 
-.. code-block::python
+.. code-block:: python
 
     import os
     from oggm import cfg, tasks, graphics, workflow
@@ -106,7 +106,7 @@ We can use the get_filepath function to get the required input data. Next, we ha
 the pygeoprocessing package, as well as all the other required packages are installed. We also need the path from the partitioning package
 to call the dividing algortihm from the console.
 
-.. code-block::python
+.. code-block:: python
 
         # set paths to python 2.7 and to the partitioning package
         python = 'path to python 2.7'
