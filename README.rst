@@ -2,7 +2,7 @@
 Partitioning
 ============
 
-Many  glaciological applications(e.g `OGGM`_) uses glacier outlines provided by the `Randolph Glacier
+Many  glaciological applications(e.g `OGGM`_) use glacier outlines provided by the `Randolph Glacier
 Inventory`_ (RGI).
 In some cases these outlines represent a "glacier complex" and not those of a single glacier.
 This results in incorrect calculations, especially as the model is developed to handle glaciers individually.
@@ -23,7 +23,7 @@ eliminates all overlaps.
 
 Requirements
 ------------
-software:
+Software:
 
 - Python 2.7 (caused by package dependencies)
 - `GDAL`_
@@ -48,7 +48,7 @@ The code of this project is available on GitHub. Clone the git repository::
 Usage
 -----
 
-The required input data is glacier outline of a single glacier and a digital elevation model (DEM) with a resolution of 40 m.
+The required input data is a glacier outline of a single glacier and a digital elevation model (DEM) with a resolution of 40 m.
 Note, that you can use `OGGM`_ to prepare the shapefile and the DEM for each glacier using a valid `RGI`_ file.
 
 First example - Python 2.7
