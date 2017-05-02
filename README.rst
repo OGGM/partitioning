@@ -108,16 +108,16 @@ to call the dividing algortihm from the console.
 
 .. code-block:: python
 
-        # set paths to python 2.7 and to the partitioning package
-        python = 'path to python 2.7'
-        project = 'path to the partitioning package'
+            # set paths to python 2.7 and to the partitioning package
+            python = 'path to python 2.7'
+            project = 'path to the partitioning package'
 
-        script = os.path.join(project, 'partitioning/run_divides.py')
+            script = os.path.join(project, 'partitioning/run_divides.py')
 
-        # run code from your console (PYTHON 2.7!)
-        os.system(python + ' ' + script + ' ' + input_shp + ' ' + input_dem)
+            # run code from your console (PYTHON 2.7!)
+            os.system(python + ' ' + script + ' ' + input_shp + ' ' + input_dem)
 
-        print('Hintereisferner is divided into', hef.n_divides, 'parts.')
+            print('Hintereisferner is divided into', hef.n_divides, 'parts.')
 
 
 .. _OGGM: http://oggm.readthedocs.io/en/latest/
