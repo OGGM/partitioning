@@ -76,6 +76,7 @@ In a further example, we would like to show how to use the dividing algorithm to
 As we will run the dividing algorithm as an external program, you have to install a Python 2.7 version with the required packages (above).
 
 We start with the usual first steps for OGGM:
+
 .. code-block::python
 
     import os
@@ -104,6 +105,7 @@ We start with the usual first steps for OGGM:
 We can use the get_filepath function to get the required input data. Next, we have to set the path to the Python 2.7 executable, where
 the pygeoprocessing package, as well as all the other required packages are installed. We also need the path from the partitioning package
 to call the dividing algortihm from the console.
+
 .. code-block::python
 
         # set paths to python 2.7 and to the partitioning package
