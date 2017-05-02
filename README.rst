@@ -117,6 +117,15 @@ to call the dividing algortihm from the console.
 
     print('Hintereisferner is divided into', hef.n_divides, 'parts.')
 
+You can now use OGGM again. The following lines compute the centerlines and plot the result.
+
+.. code-block:: python
+
+    tasks.glacier_masks(hef)
+    tasks.compute_centerlines(hef)
+    graphics.plot_centerlines(hef)
+    plt.show()
+
 
 .. _OGGM: http://oggm.readthedocs.io/en/latest/
 .. _RGI: http://www.glims.org/RGI/
