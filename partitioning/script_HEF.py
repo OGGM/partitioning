@@ -21,13 +21,10 @@ if __name__ == '__main__':
     input_shp = hef.get_filepath('outlines', div_id=0)
     input_dem = hef.get_filepath('dem', div_id=0)
 
-    # set paths to python 2.7 and to the partitioning package
-    python = 'path to python 2.7'
-    project = 'path to the partitioning package'
-
-    script = os.path.join(project, 'partitioning/run_divides.py')
-
-    # run code from your console (PYTHON 2.7!)
+    #python = 'path to python 3'
+    python = '/home/juliaeis/miniconda3/envs/test_pygeopro_env/bin/python'
+    #script = os.path.join('path to project', 'partitioning/run_divides.py')
+    script = '/home/juliaeis/Documents/LiClipseWorkspace/partitioning-fork/scripts_for_linux/run_divides.py'
     os.system(python + ' ' + script + ' ' + input_shp + ' ' + input_dem)
 
     print('Hintereisferner is divided into', hef.n_divides, 'parts.')

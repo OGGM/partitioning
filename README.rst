@@ -126,6 +126,7 @@ With the following lines OGGM compute the centerlines and plot the result.
     graphics.plot_centerlines(hef)
     plt.show()
 
+.. figure:: _pictures/RGI50-11.00897.png
 
 .. _OGGM: http://oggm.readthedocs.io/en/latest/
 .. _RGI: http://www.glims.org/RGI/
