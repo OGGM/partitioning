@@ -119,6 +119,7 @@ to call the dividing algortihm from the console.
 
         print('Hintereisferner is divided into', hef.n_divides, 'parts.')
 
+
 .. _OGGM: http://oggm.readthedocs.io/en/latest/
 .. _RGI: http://www.glims.org/RGI/
 .. _Randolph Glacier Inventory: http://www.ingentaconnect.com/content/igsoc/jog/2014/00000060/00000221/art00012
