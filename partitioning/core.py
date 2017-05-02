@@ -10,6 +10,8 @@ from rasterio.mask import mask
 from pygeoprocessing import routing
 import geopandas as gpd
 from scipy.signal import medfilt
+import pickle
+import matplotlib.pyplot as plt
 
 from skimage import img_as_float
 from skimage.feature import peak_local_max
@@ -80,6 +82,21 @@ def _compactness(polygon):
         return True
     else:
         return False
+
+
+def _check_contain_divides(glacier_poly, id):
+    exterior = glacier_poly.copy()
+    for i in exterior.index:
+        exterior.loc[i, 'geometry'] = Polygon(exterior.loc[i, 'geometry'].exterior)
+    contains = glacier_poly[exterior.contains(glacier_poly.loc[id, 'geometry'])]
+    glacier_fid = [(glacier_poly.loc[j].FID) for j in glacier_poly.index]
+    for i in contains.index.drop(id):
+        if contains.loc[i].FID in glacier_fid:
+            to_merge = glacier_poly.loc[id, 'geometry']
+
+            glacier_poly = glacier_poly.loc[glacier_poly.index.drop(id), :]
+            glacier_poly, bool = _merge_sliver(glacier_poly, to_merge)
+    return glacier_poly
 
 
 def _fill_pits_with_saga(dem, saga_cmd=None):
@@ -197,7 +214,6 @@ def flowshed_calculation(dem, shp):
                 else:
                     s3 = gpd.GeoSeries(s1)
                     flowsheds = flowsheds.append(s3, ignore_index=True)
-
     result = gpd.GeoDataFrame(geometry=flowsheds)
     result.to_file(flowshed_dir)
     return flowshed_dir
@@ -340,7 +356,6 @@ def merge_flows(shed_shp, pour_point_shp):
     p_glac.to_file(p_glac_dir)
 
     flows = gpd.read_file(shed_shp)
-
     # merge overlaps (p_glac, flowsheds)
     for j in p_glac.index:
         overlaps = flows[flows.intersects(p_glac.loc[j, 'geometry'])]
@@ -349,9 +364,13 @@ def merge_flows(shed_shp, pour_point_shp):
             flows.set_value(overlaps.index[0], 'geometry', union)
             del_ids = overlaps.index.drop(overlaps.index[0])
             flows = flows.loc[flows.index.difference(del_ids)]
-
     # add gaps
-    difference = co.difference(cascaded_union(flows.geometry))
+    all_flows = cascaded_union(flows.geometry)
+    if all_flows.type is Polygon:
+        difference = co.difference(all_flows)
+    else:
+        difference = co.difference(all_flows.simplify(0.00001))
+
     # gpd.GeoDataFrame(geometry=[difference], crs=crs).plot()
     if (difference.type is 'Polygon') and (difference.area > 0.1):
         glaciers, done = _merge_sliver(flows, difference)
@@ -386,6 +405,12 @@ def merge_flows(shed_shp, pour_point_shp):
     for id in glaciers.index:
         if id in glaciers.index:
             glaciers = _split_overlaps(glaciers, id)
+
+    # check if divide is inside another divide
+    for id in glaciers.index:
+        if id in glaciers.index:
+            glaciers = _check_contain_divides(glaciers, id)
+
     # save glaciers
     i = 1
     for id in glaciers.index:
@@ -402,7 +427,7 @@ def merge_flows(shed_shp, pour_point_shp):
         divide = _make_polygon(divide)
         divide.to_file(os.path.join(divide_shp, 'outlines.shp'))
         i += 1
-    print('finish flows :', time.time()-start)
+    #print('finish flows :', time.time()-start)
     return len(glaciers)
 
 
@@ -434,7 +459,7 @@ def merge_sliver_poly(glacier_poly, polygon):
 
 def _make_polygon(gpd_obj):
     """select geometry which are from the type Polygon, MultiPolygon or
-     GeometryCollection. The las one is converted to a Polygon/Multipolygon
+     GeometryCollection. The last one is converted to a Polygon/Multipolygon
      (Line Strings/MultiLineStrings are removed)
 
     Parameters
@@ -496,6 +521,9 @@ def _is_sliver(polygon):
     -------
     bool
     """
+    if polygon.type is not 'Polygon':
+        max_poly = np.argmax(poly.area for poly in polygon)
+        polygon = polygon[max_poly]
 
     if polygon.area < 100000 or (polygon.area < 200000 and _compactness(
             polygon)):
@@ -523,7 +551,9 @@ def _merge_sliver(gpd_obj, polygon):
     intersection_array = gpd_obj.intersection(polygon.boundary).length
     if np.max(intersection_array) != 0:
         max_b = np.argmax(intersection_array)
-        geom = gpd_obj.loc[max_b, 'geometry'].union(polygon.buffer(0))
+        geom = gpd_obj.loc[max_b, 'geometry'].simplify(0.001).union(polygon.buffer(0))
+        if geom.type is not 'Polygon':
+            geom = geom.buffer(0.01).buffer(-0.01)
         gpd_obj.set_value(max_b, 'geometry', geom)
         merged = True
     # sliver does not touch glacier at the moment. Try again in the end
@@ -550,8 +580,8 @@ def _merge_overlaps(gpd_obj, l):
         merge = inter[inter.area / gpd_obj.loc[l, 'geometry'].area > 0.5]
         while not merge.empty:
             if len(merge.index) == 1:
-                gpd_obj.loc[l, 'geometry'] = gpd_obj.loc[l, 'geometry'].union(
-                    gpd_obj.loc[merge.index[0], 'geometry'])
+                gpd_obj.set_value(l, 'geometry', gpd_obj.loc[l, 'geometry'].
+                                  union(gpd_obj.loc[merge.index[0], 'geometry']))
                 gpd_obj = gpd_obj.loc[gpd_obj.index.difference(merge.index)]
                 inter = _intersection_of_glaciers(gpd_obj, l)
                 to_merge = inter.area / gpd_obj.loc[l, 'geometry'].area > 0.5
@@ -704,7 +734,7 @@ def preprocessing(dem, shp, saga_cmd=None):
     return gutter_dem
 
 
-def dividing_glaciers(input_dem, input_shp):
+def dividing_glaciers(input_dem, input_shp, saga_cmd=None):
     """ This is the main structure of the algorithm
 
     Parameters
