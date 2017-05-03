@@ -110,7 +110,7 @@ to call the dividing algortihm from the console.
     python = 'path to python 2.7'
     project = 'path to the partitioning package'
 
-    script = os.path.join(project, 'partitioning/run_divides.py')
+    script = os.path.join(project, 'partitioning/examples/run_divides.py')
 
     # run code from your console (PYTHON 2.7!)
     os.system(python + ' ' + script + ' ' + input_shp + ' ' + input_dem)
