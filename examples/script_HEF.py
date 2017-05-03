@@ -26,7 +26,7 @@ if __name__ == '__main__':
     python = '/home/juliaeis/miniconda3/envs/test_pygeopro_env/bin/python'
     #project = 'path to the partitioning package'
     project = '/home/juliaeis/Documents/LiClipseWorkspace/partitioning-fork'
-    script = os.path.join(project, 'partitioning/run_divides.py')
+    script = os.path.join(project, 'partitioning/examples/run_divides.py')
     os.system(python + ' ' + script + ' ' + input_shp + ' ' + input_dem)
     print('Hintereisferner is divided into', hef.n_divides, 'parts.')
 
