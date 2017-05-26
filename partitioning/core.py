@@ -108,7 +108,6 @@ def _check_altitude_rage(gpd_obj):
         gpd_obj, bool = _merge_sliver(gpd_obj, geom.geometry)
     return gpd_obj
 
-
 def _check_contain_divides(glacier_poly, id):
     """
     check if any object from glacier_poly contains glacier_poly.loc[id,
