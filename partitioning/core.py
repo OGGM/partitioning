@@ -83,6 +83,32 @@ def _compactness(polygon):
         return False
 
 
+def _compute_altitude(dem, polygon):
+    geoms = [mapping(polygon)]
+
+    with rasterio.open(dem) as src:
+        out_image, out_transform = mask(src, geoms, nodata=np.nan, crop=False)
+    altitude = np.nanmax(out_image)-np.nanmin(out_image)
+    return altitude
+
+
+def _check_altitude_rage(gpd_obj):
+
+    nokeep = ((gpd_obj['Perc_Alt_Range'] < 0.1) | (gpd_obj['Alt_Range'] < 100))
+    gpd_obj['keep'] = ~nokeep
+    print('We keep {} divides out of {} '
+          'after filtering.'.format(np.sum(gpd_obj['keep']),
+                                    len(gpd_obj)))
+    if np.sum(gpd_obj['keep']) == 1:
+        # Nothing to do! The divide should be ignored
+        return gpd_obj
+    while not gpd_obj['keep'].all():
+        geom = gpd_obj.loc[~gpd_obj['keep']].iloc[0]
+        gpd_obj = gpd_obj.drop(geom.name)
+        gpd_obj, bool = _merge_sliver(gpd_obj, geom.geometry)
+    return gpd_obj
+
+
 def _check_contain_divides(glacier_poly, id):
     """
     check if any object from glacier_poly contains glacier_poly.loc[id,
