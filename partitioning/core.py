@@ -8,6 +8,7 @@ from shapely.geometry import mapping, shape
 import rasterio
 from rasterio.mask import mask
 from pygeoprocessing import routing
+import pandas as pd
 import geopandas as gpd
 from scipy.signal import medfilt
 import pickle
@@ -55,6 +56,29 @@ def _raster_mask(input_dem, polygon, out_name):
     return output_dem
 
 
+def _convert_to_polygon(gpd_obj):
+    """convert geopandas object, which could include Multipolygons to a new
+    geopandas object containing only Polygons
+
+    Parameters
+    ----------
+    gpd_obj :   gpd.GeoDataFrame
+
+    Returns
+    -------
+    gpd.GeoDataFrame
+    """
+    for i in gpd_obj.index:
+        if gpd_obj.loc[i, 'geometry'].type is not 'Polygon':
+            geom = gpd_obj.loc[i, 'geometry']
+            area = [glac.area for glac in geom]
+            gpd_obj.set_value(i, 'geometry', geom[np.argmax(area)])
+            for j in range(len(geom)):
+                if not j == np.argmax(area) and geom[j].area > 1:
+                    gpd_obj, bool = _merge_sliver(gpd_obj, geom[j])
+    return gpd_obj
+
+
 def _compactness(polygon):
     """ check if polygon satisfy glacier compactness (Allen,1998)
 
@@ -84,29 +108,71 @@ def _compactness(polygon):
 
 
 def _compute_altitude(dem, polygon):
-    geoms = [mapping(polygon)]
+    """ compute altitude range for a polygon
 
+    Parameters
+    ----------
+    dem     :   str
+        path to a DEM file
+    polygon :   shapely.geometry.Polygon
+        polygon of the glacier divide
+    Returns
+    -------
+    float   : altitude range
+    """
+    geoms = [mapping(polygon)]
     with rasterio.open(dem) as src:
         out_image, out_transform = mask(src, geoms, nodata=np.nan, crop=False)
     altitude = np.nanmax(out_image)-np.nanmin(out_image)
     return altitude
 
 
-def _check_altitude_rage(gpd_obj):
+def _filter_divides(gpd_obj, filter_area, filter_alt_range,
+                    filter_perc_alt_range):
+    """ filter divides
 
-    nokeep = ((gpd_obj['Perc_Alt_Range'] < 0.1) | (gpd_obj['Alt_Range'] < 100))
+    Parameters
+    ----------
+    gpd_obj                 : gpd.GeoDataFrame
+    filter_area             : bool
+                              (True: keep a divide only if it's area is not
+                               smaller than 2% of the largest divide)
+    filter_alt_range        : bool
+                              (True: keep a divide only if the absolute
+                               altitude range of the divide is larger than 100m
+    filter_perc_alt_range   : bool
+                              (True: keep a divide only if the altitude range
+                               of the divide is larger than 10% of the glaciers
+                               total altitude range
+
+    Returns
+    -------
+    filtered gpd.GeoDataFrame object
+    """
+
+    # initialise nokeep
+    nokeep = pd.Series(np.zeros(len(gpd_obj), dtype=np.bool))
+    if filter_area is True:
+        nokeep = nokeep | (gpd_obj['Perc_Area'] < 0.02)
+    if filter_alt_range is True:
+        nokeep = nokeep | (gpd_obj['Alt_Range'] < 100)
+    if filter_perc_alt_range is True:
+        nokeep = nokeep | (gpd_obj['Perc_Alt_Range'] < 0.1)
+
     gpd_obj['keep'] = ~nokeep
     print('We keep {} divides out of {} '
           'after filtering.'.format(np.sum(gpd_obj['keep']),
                                     len(gpd_obj)))
-    if np.sum(gpd_obj['keep']) == 1:
+    if np.sum(gpd_obj['keep']) in [0, 1]:
         # Nothing to do! The divide should be ignored
-        return gpd_obj
+        return gpd_obj, False
+
     while not gpd_obj['keep'].all():
         geom = gpd_obj.loc[~gpd_obj['keep']].iloc[0]
         gpd_obj = gpd_obj.drop(geom.name)
         gpd_obj, bool = _merge_sliver(gpd_obj, geom.geometry)
-    return gpd_obj
+    return gpd_obj, True
+
 
 def _check_contain_divides(glacier_poly, id):
     """
@@ -370,7 +436,8 @@ def _create_p_glac(shp):
     return p_glac
 
 
-def merge_flows(shed_shp, pour_point_shp):
+def merge_flows(shed_shp, pour_point_shp, filter_area, filter_alt_range,
+                filter_perc_alt_range):
     """merge the flowsheds together. First, P_glac(circle which radius depends
     on the flowaccumulation) is calculated for each pour point. If one or more
     fowsheds overlaie by the area of this circle, they are merged together.
@@ -416,6 +483,7 @@ def merge_flows(shed_shp, pour_point_shp):
     if (difference.type is 'Polygon') and (difference.area > 0.1):
         glaciers, done = _merge_sliver(flows, difference)
     last_sliver = []
+
     if difference.type is 'MultiPolygon':
         for polygon in difference:
             if polygon.area > 0.1:
@@ -426,9 +494,11 @@ def merge_flows(shed_shp, pour_point_shp):
     glaciers = flows.loc[flows.index.difference(slivers.index)]
     if len(glaciers) <= 1:
         return 1
-    glaciers.to_file(os.path.join(os.path.dirname(pour_point_shp), 'glaciers.shp'))
+    glaciers.to_file(os.path.join(os.path.dirname(pour_point_shp),
+                                  'glaciers.shp'))
     if not slivers.empty:
-        slivers.to_file(os.path.join(os.path.dirname(pour_point_shp), 'slivers.shp'))
+        slivers.to_file(os.path.join(os.path.dirname(pour_point_shp),
+                                     'slivers.shp'))
     # merge slivers to glaciers
     for k in slivers.index:
         sliver = slivers.loc[k, 'geometry']
@@ -438,7 +508,6 @@ def merge_flows(shed_shp, pour_point_shp):
 
     for polygon in last_sliver:
         glaciers, done = _merge_sliver(glaciers, polygon)
-
     # correct overlapping of glaciers
     for id in glaciers.index:
         glaciers = _merge_overlaps(glaciers, id)
@@ -447,11 +516,31 @@ def merge_flows(shed_shp, pour_point_shp):
         if id in glaciers.index:
             glaciers = _split_overlaps(glaciers, id)
 
+    glaciers = _convert_to_polygon(glaciers)
+
     # check if divide is inside another divide
     for id in glaciers.index:
         if id in glaciers.index:
             glaciers = _check_contain_divides(glaciers, id)
+            # compute altitude range
+        if id in glaciers.index:
+            poly = glaciers.loc[id, 'geometry']
+            glaciers.loc[id, 'Alt_Range'] = _compute_altitude(filled_dem, poly)
+        # compute percentual altitude range
+        max_alt = np.max(glaciers.loc[:, 'Alt_Range'])
+        per_alt_range = glaciers.loc[:, 'Alt_Range']/max_alt
+        glaciers.loc[:, 'Perc_Alt_Range'] = per_alt_range
 
+    glaciers.loc[:, 'Area'] = glaciers.geometry.area
+    glaciers = glaciers.sort_values('Area', ascending=False)
+    glaciers = glaciers.reset_index()
+
+    glaciers['Perc_Area'] = glaciers.Area / glaciers.loc[0].Area
+
+    glaciers, stop = _filter_divides(glaciers, filter_area, filter_alt_range,
+                                     filter_perc_alt_range)
+    if stop is False:
+        return 1
     # save glaciers
     i = 1
     for id in glaciers.index:
@@ -461,6 +550,7 @@ def merge_flows(shed_shp, pour_point_shp):
             os.makedirs(divide_shp)
         divide = out1.loc[0][:]
         divide.loc['geometry'] = glaciers.loc[id, 'geometry']
+        # update area
         divide.loc['Area'] = divide.geometry.area
 
         divide = gpd.GeoDataFrame([divide], geometry=[divide.geometry],
@@ -516,7 +606,8 @@ def _make_polygon(gpd_obj):
                       (gpd_obj.type == 'Polygon') |
                       (gpd_obj.type == 'MultiPolygon')]
     if not gpd_obj.empty:
-        collection = gpd_obj[(~gpd_obj.is_empty) & (gpd_obj.type == 'GeometryCollection')]
+        collection = gpd_obj[(~gpd_obj.is_empty) &
+                             (gpd_obj.type == 'GeometryCollection')]
         # choose only polygons or multipolygons
         for c in collection.index:
             geo = collection.loc[c, 'geometry']
@@ -589,12 +680,15 @@ def _merge_sliver(gpd_obj, polygon):
     new gpd.GeoDataFrame,
     bool
     """
+
     intersection_array = gpd_obj.intersection(polygon.boundary).length
+
     if np.max(intersection_array) != 0:
         max_b = np.argmax(intersection_array)
-        geom = gpd_obj.loc[max_b, 'geometry'].simplify(0.001).union(polygon.buffer(0))
+        poly = gpd_obj.loc[max_b, 'geometry'].simplify(0.01).buffer(0)
+        geom = poly.union(polygon.buffer(0)).buffer(0)
         if geom.type is not 'Polygon':
-            geom = geom.buffer(0.01).buffer(-0.01)
+            geom = geom.buffer(-0.01).buffer(0.01)
         gpd_obj.set_value(max_b, 'geometry', geom)
         merged = True
     # sliver does not touch glacier at the moment. Try again in the end
@@ -621,8 +715,9 @@ def _merge_overlaps(gpd_obj, l):
         merge = inter[inter.area / gpd_obj.loc[l, 'geometry'].area > 0.5]
         while not merge.empty:
             if len(merge.index) == 1:
-                gpd_obj.set_value(l, 'geometry', gpd_obj.loc[l, 'geometry'].
-                                  union(gpd_obj.loc[merge.index[0], 'geometry']))
+                poly = gpd_obj.loc[l, 'geometry'].union(
+                    gpd_obj.loc[merge.index[0], 'geometry'])
+                gpd_obj.set_value(l, 'geometry', poly)
                 gpd_obj = gpd_obj.loc[gpd_obj.index.difference(merge.index)]
                 inter = _intersection_of_glaciers(gpd_obj, l)
                 to_merge = inter.area / gpd_obj.loc[l, 'geometry'].area > 0.5
@@ -630,8 +725,8 @@ def _merge_overlaps(gpd_obj, l):
 
             if len(merge.index) > 1:
                 cascaded = cascaded_union(gpd_obj.loc[merge.index, 'geometry'])
-                gpd_obj.loc[l, 'geometry'] = gpd_obj.loc[l, 'geometry']. \
-                    union(cascaded)
+                gpd_obj.set_value(l, 'geometry', gpd_obj.loc[l, 'geometry'].
+                                  union(cascaded))
                 gpd_obj = gpd_obj.loc[gpd_obj.index.difference(merge.index)]
                 inter = _intersection_of_glaciers(gpd_obj, l)
                 to_merge = inter.area / gpd_obj.loc[l, 'geometry'].area > 0.5
@@ -816,6 +911,7 @@ def preprocessing(dem, shp, saga_cmd=None):
     global pixelsize
     global co
     global out1
+    global filled_dem
     pixelsize = 40
 
     smoothed_dem = _smooth_dem(dem)
@@ -836,7 +932,8 @@ def preprocessing(dem, shp, saga_cmd=None):
     return gutter_dem
 
 
-def dividing_glaciers(input_dem, input_shp, saga_cmd=None):
+def dividing_glaciers(input_dem, input_shp, saga_cmd=None, filter_area=False,
+                      filter_alt_range=True, filter_perc_alt_range=True):
     """ This is the main structure of the algorithm
 
     Parameters
@@ -857,7 +954,8 @@ def dividing_glaciers(input_dem, input_shp, saga_cmd=None):
         gutter_dem = preprocessing(input_dem, input_shp)
     pour_points_dir = identify_pour_points(gutter_dem)
     flowsheds_dir = flowshed_calculation(gutter_dem, pour_points_dir)
-    no_glaciers = merge_flows(flowsheds_dir, pour_points_dir)
+    no_glaciers = merge_flows(flowsheds_dir, pour_points_dir, filter_area,
+                              filter_alt_range, filter_perc_alt_range)
 
     # merge_flowsheds(p_glac, flowsheds_dir)
 
