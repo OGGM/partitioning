@@ -152,12 +152,19 @@ def _filter_divides(gpd_obj, filter_area, filter_alt_range,
 
     # initialise nokeep
     nokeep = pd.Series(np.zeros(len(gpd_obj), dtype=np.bool))
+    print gpd_obj
     if filter_area is True:
         nokeep = nokeep | (gpd_obj['Perc_Area'] < 0.02)
+        print('{} divides are filtered out caused by area').format(
+            np.sum(gpd_obj['Perc_Area'] < 0.02))
     if filter_alt_range is True:
         nokeep = nokeep | (gpd_obj['Alt_Range'] < 100)
+        print('{} divides are filtered out caused by altitude range'.format(
+            np.sum(gpd_obj['Alt_Range'] < 100)))
     if filter_perc_alt_range is True:
         nokeep = nokeep | (gpd_obj['Perc_Alt_Range'] < 0.1)
+        print('{} divides are filtered out caused by percentage altitude range'
+            .format(np.sum(gpd_obj['Perc_Alt_Range'] < 0.1)))
 
     gpd_obj['keep'] = ~nokeep
     print('We keep {} divides out of {} '
@@ -537,8 +544,9 @@ def merge_flows(shed_shp, pour_point_shp, filter_area, filter_alt_range,
 
     glaciers['Perc_Area'] = glaciers.Area / glaciers.loc[0].Area
 
-    glaciers, stop = _filter_divides(glaciers, filter_area, filter_alt_range,
-                                     filter_perc_alt_range)
+    glaciers, stop = _filter_divides(glaciers, eval(filter_area),
+                                     eval(filter_alt_range),
+                                     eval(filter_perc_alt_range))
     if stop is False:
         return 1
     # save glaciers
