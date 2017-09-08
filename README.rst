@@ -103,9 +103,11 @@ We start with the usual first steps for OGGM:
 We can use the get_filepath function to get the required input data.
 
 Aditionally, we implement 3 methods to filter some of the divided glaciers:
+
 - area filter               : keep a divide only if it's area is not smaller than 2% of the largest divide
 - altutide filter           : keep a divide only if the absolute altitude range of the divide is larger than 100m
 - percentual altitude filter: keep a divide only if the altitude range of the divide is larger than 10% of the glaciers total altitude range
+
 To use one of these filter, set it's boolean to True (default: False). We recomment to use the two altitude filters.
 
 Next, we have to set the path to the Python 2.7 executable, where the pygeoprocessing package, as well as all the other required packages are installed. We also need the path from the partitioning package

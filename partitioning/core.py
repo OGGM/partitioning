@@ -256,7 +256,9 @@ def _flowacc(input_dem):
     -------
     path to raster file with the flow accumulation gutter
     """
+    print(input_dem)
     flow_direction = os.path.join(os.path.dirname(input_dem), 'flow_dir.tif')
+    print(flow_direction)
     flow_accumulation = os.path.join(os.path.dirname(input_dem),
                                      'flow_accumulation.tif')
     # calculate flow direction
@@ -823,7 +825,7 @@ def _smooth_dem(dem):
         array = src.read()
         profile = src.profile
     # apply a 5x5 median filter to each band
-    filtered = medfilt(array, (1, 5, 5)).astype('float32')
+    filtered = medfilt(array, (1, 5, 5)).astype('int16')
     with rasterio.open(smoothed_dem, 'w', **profile) as dst:
         dst.write(filtered)
     return smoothed_dem
@@ -941,7 +943,7 @@ def preprocessing(dem, shp, saga_cmd=None):
 
 
 def dividing_glaciers(input_dem, input_shp, saga_cmd=None, filter_area=False,
-                      filter_alt_range=True, filter_perc_alt_range=True):
+                      filter_alt_range=False, filter_perc_alt_range=False):
     """ This is the main structure of the algorithm
 
     Parameters
@@ -977,5 +979,6 @@ def dividing_glaciers(input_dem, input_shp, saga_cmd=None, filter_area=False,
                      'pour', 'smoothed', 'snapped', 'stream', 'masked',
                      'slivers', 'filled']:
             if file.startswith(word):
-                os.remove(os.path.join(os.path.dirname(input_shp), file))
+                pass
+                #os.remove(os.path.join(os.path.dirname(input_shp), file))
     return no_glaciers
