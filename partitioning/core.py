@@ -152,24 +152,15 @@ def _filter_divides(gpd_obj, filter_area, filter_alt_range,
 
     # initialise nokeep
     nokeep = pd.Series(np.zeros(len(gpd_obj), dtype=np.bool))
-    print gpd_obj
     if filter_area is True:
         nokeep = nokeep | (gpd_obj['Perc_Area'] < 0.02)
-        print('{} divides are filtered out caused by area').format(
-            np.sum(gpd_obj['Perc_Area'] < 0.02))
     if filter_alt_range is True:
         nokeep = nokeep | (gpd_obj['Alt_Range'] < 100)
-        print('{} divides are filtered out caused by altitude range'.format(
-            np.sum(gpd_obj['Alt_Range'] < 100)))
     if filter_perc_alt_range is True:
         nokeep = nokeep | (gpd_obj['Perc_Alt_Range'] < 0.1)
-        print('{} divides are filtered out caused by percentage altitude range'
-            .format(np.sum(gpd_obj['Perc_Alt_Range'] < 0.1)))
 
     gpd_obj['keep'] = ~nokeep
-    print('We keep {} divides out of {} '
-          'after filtering.'.format(np.sum(gpd_obj['keep']),
-                                    len(gpd_obj)))
+
     if np.sum(gpd_obj['keep']) in [0, 1]:
         # Nothing to do! The divide should be ignored
         return gpd_obj, False
@@ -256,9 +247,7 @@ def _flowacc(input_dem):
     -------
     path to raster file with the flow accumulation gutter
     """
-    print(input_dem)
     flow_direction = os.path.join(os.path.dirname(input_dem), 'flow_dir.tif')
-    print(flow_direction)
     flow_accumulation = os.path.join(os.path.dirname(input_dem),
                                      'flow_accumulation.tif')
     # calculate flow direction
@@ -979,6 +968,5 @@ def dividing_glaciers(input_dem, input_shp, saga_cmd=None, filter_area=False,
                      'pour', 'smoothed', 'snapped', 'stream', 'masked',
                      'slivers', 'filled']:
             if file.startswith(word):
-                pass
-                #os.remove(os.path.join(os.path.dirname(input_shp), file))
+                os.remove(os.path.join(os.path.dirname(input_shp), file))
     return no_glaciers
