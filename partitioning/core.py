@@ -160,9 +160,7 @@ def _filter_divides(gpd_obj, filter_area, filter_alt_range,
         nokeep = nokeep | (gpd_obj['Perc_Alt_Range'] < 0.1)
 
     gpd_obj['keep'] = ~nokeep
-    print('We keep {} divides out of {} '
-          'after filtering.'.format(np.sum(gpd_obj['keep']),
-                                    len(gpd_obj)))
+
     if np.sum(gpd_obj['keep']) in [0, 1]:
         # Nothing to do! The divide should be ignored
         return gpd_obj, False
@@ -537,8 +535,9 @@ def merge_flows(shed_shp, pour_point_shp, filter_area, filter_alt_range,
 
     glaciers['Perc_Area'] = glaciers.Area / glaciers.loc[0].Area
 
-    glaciers, stop = _filter_divides(glaciers, filter_area, filter_alt_range,
-                                     filter_perc_alt_range)
+    glaciers, stop = _filter_divides(glaciers, eval(filter_area),
+                                     eval(filter_alt_range),
+                                     eval(filter_perc_alt_range))
     if stop is False:
         return 1
     # save glaciers
@@ -815,7 +814,7 @@ def _smooth_dem(dem):
         array = src.read()
         profile = src.profile
     # apply a 5x5 median filter to each band
-    filtered = medfilt(array, (1, 5, 5)).astype('float32')
+    filtered = medfilt(array, (1, 5, 5)).astype('int16')
     with rasterio.open(smoothed_dem, 'w', **profile) as dst:
         dst.write(filtered)
     return smoothed_dem
@@ -933,7 +932,7 @@ def preprocessing(dem, shp, saga_cmd=None):
 
 
 def dividing_glaciers(input_dem, input_shp, saga_cmd=None, filter_area=False,
-                      filter_alt_range=True, filter_perc_alt_range=True):
+                      filter_alt_range=False, filter_perc_alt_range=False):
     """ This is the main structure of the algorithm
 
     Parameters
