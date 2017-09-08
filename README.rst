@@ -10,8 +10,8 @@ This results in incorrect calculations, especially as the model is developed to 
 .. figure:: _pictures/RGI50-11.01791.png
 
 Thus, a method seperating these complexes was developed by `Kienholz et al., (2013)`_. We have implemented this
-method in the Python programming language and currently use `SAGA`_ and `GDAL`_ functions. Compared to the
-described algorithm in `Kienholz et al., (2013)`_ , all used software packages are open source.
+method in the Python programming language and currently use `SAGA`_ and `GDAL`_ functions. All used software packages
+are open source, making the algorithm developped by `Kienholz et al., (2013)`_ ,freely aviable.
 
 The workflow as well as the suggested parameter values persist unmodifed.
 
@@ -100,11 +100,25 @@ We start with the usual first steps for OGGM:
     input_shp = hef.get_filepath('outlines', div_id=0)
     input_dem = hef.get_filepath('dem', div_id=0)
 
-We can use the get_filepath function to get the required input data. Next, we have to set the path to the Python 2.7 executable, where
-the pygeoprocessing package, as well as all the other required packages are installed. We also need the path from the partitioning package
+We can use the get_filepath function to get the required input data.
+
+Aditionally, we implement 3 methods to filter some of the divided glaciers:
+- area filter               : keep a divide only if it's area is not smaller than 2% of the largest divide
+- altutide filter           : keep a divide only if the absolute altitude range of the divide is larger than 100m
+- percentual altitude filter: keep a divide only if the altitude range of the divide is larger than 10% of the glaciers total altitude range
+To use one of these filter, set it's boolean to True (default: False). We recomment to use the two altitude filters.
+
+Next, we have to set the path to the Python 2.7 executable, where the pygeoprocessing package, as well as all the other required packages are installed. We also need the path from the partitioning package
 to call the dividing algortihm from the console.
 
+
+
 .. code-block:: python
+
+    # filter options
+    f_area = False
+    f_alt_range = True
+    f_perc_alt_range = True
 
     # set paths to python 2.7 and to the partitioning package
     python = 'path to python 2.7'
@@ -113,7 +127,8 @@ to call the dividing algortihm from the console.
     script = os.path.join(project, 'partitioning/examples/run_divides.py')
 
     # run code from your console (PYTHON 2.7!)
-    os.system(python + ' ' + script + ' ' + input_shp + ' ' + input_dem)
+    os.system(python + ' ' + script + ' ' + input_shp + ' ' + input_dem + ' ' +
+              str(f_area) + ' ' + str(f_alt_range) + ' ' + str(f_perc_alt_range))
 
     print('Hintereisferner is divided into', hef.n_divides, 'parts.')
 

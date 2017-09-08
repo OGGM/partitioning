@@ -21,13 +21,21 @@ if __name__ == '__main__':
     input_shp = hef.get_filepath('outlines', div_id=0)
     input_dem = hef.get_filepath('dem', div_id=0)
 
+    # filter options
+    f_area = False
+    f_alt_range = True
+    f_perc_alt_range = True
+
     # set paths to python 2.7 and to the partitioning package
 
     python = 'path to python 2.7'
     project = 'path to the partitioning package'
     
     script = os.path.join(project, 'partitioning/examples/run_divides.py')
-    os.system(python + ' ' + script + ' ' + input_shp + ' ' + input_dem)
+    os.system(python + ' ' + script + ' ' + input_shp + ' ' + input_dem + ' ' +
+              str(f_area) + ' ' + str(f_alt_range) + ' ' + str(
+              f_perc_alt_range))
+
     print('Hintereisferner is divided into', hef.n_divides, 'parts.')
 
     tasks.glacier_masks(hef)
