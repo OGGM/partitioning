@@ -144,6 +144,8 @@ def count_failed(dir):
 
 if __name__ == '__main__':
 
-    make_bar_plots('/home/juliaeis/Schreibtisch/partitioning/no_filter','/home/juliaeis/Schreibtisch/partitioning/altitude_filter','/home/juliaeis/Schreibtisch/partitioning/area_filter')
+    #make_bar_plots('/home/juliaeis/Schreibtisch/partitioning/no_filter','/home/juliaeis/Schreibtisch/partitioning/altitude_filter','/home/juliaeis/Schreibtisch/partitioning/area_filter')
     #count_total_number('/home/juliaeis/Schreibtisch/partitioning/area_filter')
-    #count_failed('/home/juliaeis/Schreibtisch/partitioning/no_filter')
+    #count_failed('/home/juliaeis/Schreibtisch/partitioning/no_filter'
+    divides = gpd.read_file('/home/juliaeis/Schreibtisch/partitioning/no_filter/RGI50-11/all_RGI50-11.shp')
+    print(divides.head(8))

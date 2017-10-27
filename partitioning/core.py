@@ -550,7 +550,7 @@ def merge_flows(shed_shp, pour_point_shp, filter_area, filter_alt_range,
         divide = out1.loc[0][:]
         divide.loc['geometry'] = glaciers.loc[id, 'geometry']
         # update area
-        divide.loc['Area'] = divide.geometry.area
+        divide.loc['Area'] = divide.geometry.area/10**6
 
         divide = gpd.GeoDataFrame([divide], geometry=[divide.geometry],
                                   crs=crs)
