@@ -529,7 +529,7 @@ def merge_flows(shed_shp, pour_point_shp, filter_area, filter_alt_range,
         per_alt_range = glaciers.loc[:, 'Alt_Range']/max_alt
         glaciers.loc[:, 'Perc_Alt_Range'] = per_alt_range
 
-    glaciers.loc[:, 'Area'] = glaciers.geometry.area
+    glaciers.loc[:, 'Area'] = glaciers.geometry.area/10**6
     glaciers = glaciers.sort_values('Area', ascending=False)
     glaciers = glaciers.reset_index()
 
@@ -541,10 +541,38 @@ def merge_flows(shed_shp, pour_point_shp, filter_area, filter_alt_range,
     if stop is False:
         return 1
     # save glaciers
-    i = 1
+
+    divide = out1
+    for i in range(len(glaciers)-1):
+        divide = divide.append(out1, ignore_index=True)
+    divide['Area'] = ""
+
+    for i in range(len(glaciers)):
+        divide.loc[i]['geometry'] = glaciers.loc[i]['geometry']
+    divide['remarks'] = ""
+    new_id = [divide.loc[i, 'RGIId']+'_d' + str(i+1).zfill(2) for i in
+              range(len(glaciers))]
+    area_km = [g.area/10**6 for g in glaciers.geometry]
+    cenlon = [g.centroid.xy[0][0] for g in divide.geometry]
+    cenlat = [g.centroid.xy[1][0] for g in divide.geometry]
+
+    divide.loc[divide.index, 'OGGM_area'] = area_km
+    divide.loc[divide.index, 'RGIId'] = new_id
+    divide.loc[divide.index, 'CenLon'] = cenlon
+    divide.loc[divide.index, 'CenLat'] = cenlat
+    divide = divide[['Area', 'OGGM_area', 'Aspect', 'BgnDate', 'CenLat',
+                    'CenLon', 'EndDate', 'GLIMSId', 'GlacType', 'Lmax', 'Name',
+                    'O1Region', 'O2Region', 'RGIFlag', 'RGIId', 'Slope',
+                    'Zmax', 'Zmed', 'Zmin', 'geometry', 'max_x', 'max_y',
+                    'min_x', 'min_y']]
+
+    divide.to_file(os.path.join(os.path.dirname(shed_shp),
+                                out1.loc[0, 'RGIId'] + '_d.shp'))
+    '''
     for id in glaciers.index:
-        dir_name = 'divide_'+str(i).zfill(2)
-        divide_shp = os.path.join(os.path.dirname(shed_shp), dir_name)
+        dir_name = out1.loc[0]['RGIId']+'_d'+str(i).zfill(2)
+        divide_shp = os.path.join(os.path.dirname(os.path.dirname(shed_shp)),
+                                  dir_name)
         if not os.path.isdir(divide_shp):
             os.makedirs(divide_shp)
         divide = out1.loc[0][:]
@@ -558,8 +586,8 @@ def merge_flows(shed_shp, pour_point_shp, filter_area, filter_alt_range,
         divide.to_file(os.path.join(divide_shp, 'outlines.shp'))
         i += 1
     # print('finish flows :', time.time()-start)
-    return len(glaciers)
-
+    '''
+    return len(divide)
 
 def merge_sliver_poly(glacier_poly, polygon):
     """Sliver polygon will be merged to the polygon of glacier_poly with the
