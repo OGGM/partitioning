@@ -541,7 +541,11 @@ def merge_flows(shed_shp, pour_point_shp, filter_area, filter_alt_range,
     if stop is False:
         return 1
     # save glaciers
-
+    glaciers['keep'] = glaciers['keep'].astype('int')
+    glaciers.to_file(os.path.join(os.path.dirname(pour_point_shp),
+                                  'divides.shp'))
+    return len(glaciers)
+    '''
     divide = out1
     for i in range(len(glaciers)-1):
         divide = divide.append(out1, ignore_index=True)
@@ -560,15 +564,15 @@ def merge_flows(shed_shp, pour_point_shp, filter_area, filter_alt_range,
     divide.loc[divide.index, 'RGIId'] = new_id
     divide.loc[divide.index, 'CenLon'] = cenlon
     divide.loc[divide.index, 'CenLat'] = cenlat
-    divide = divide[['Area', 'OGGM_area', 'Aspect', 'BgnDate', 'CenLat',
-                    'CenLon', 'EndDate', 'GLIMSId', 'GlacType', 'Lmax', 'Name',
-                    'O1Region', 'O2Region', 'RGIFlag', 'RGIId', 'Slope',
-                    'Zmax', 'Zmed', 'Zmin', 'geometry', 'max_x', 'max_y',
-                    'min_x', 'min_y']]
-
+    divide = divide[['Area', 'OGGM_area', 'Aspect', 'BgnDate', 'CenLat', 'CenLon',
+                     'Connect', 'EndDate', 'Form', 'GLIMSId', 'Linkages',
+                     'Lmax', 'Name', 'O1Region', 'O2Region', 'RGIId', 'Slope',
+                     'Status', 'Surging', 'TermType', 'Zmax', 'Zmed', 'Zmin',
+                     'geometry', 'min_x', 'max_x', 'min_y', 'max_y', 'remarks']]
+    print(divide)
     divide.to_file(os.path.join(os.path.dirname(shed_shp),
                                 out1.loc[0, 'RGIId'] + '_d.shp'))
-    '''
+
     for id in glaciers.index:
         dir_name = out1.loc[0]['RGIId']+'_d'+str(i).zfill(2)
         divide_shp = os.path.join(os.path.dirname(os.path.dirname(shed_shp)),
@@ -587,7 +591,8 @@ def merge_flows(shed_shp, pour_point_shp, filter_area, filter_alt_range,
         i += 1
     # print('finish flows :', time.time()-start)
     '''
-    return len(divide)
+
+
 
 def merge_sliver_poly(glacier_poly, polygon):
     """Sliver polygon will be merged to the polygon of glacier_poly with the
