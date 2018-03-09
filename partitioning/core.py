@@ -535,6 +535,7 @@ def merge_flows(shed_shp, pour_point_shp, filter_area, filter_alt_range,
 
     glaciers['Perc_Area'] = glaciers.Area / glaciers.loc[0].Area
 
+    print(glaciers)
     glaciers, stop = _filter_divides(glaciers, eval(filter_area),
                                      eval(filter_alt_range),
                                      eval(filter_perc_alt_range))
@@ -591,7 +592,6 @@ def merge_flows(shed_shp, pour_point_shp, filter_area, filter_alt_range,
         i += 1
     # print('finish flows :', time.time()-start)
     '''
-
 
 
 def merge_sliver_poly(glacier_poly, polygon):

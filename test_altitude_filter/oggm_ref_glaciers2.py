@@ -31,8 +31,10 @@ if __name__ == '__main__':
     cfg.PARAMS['grid_dx_method'] = 'fixed'
     cfg.PARAMS['fixed_dx'] = 40
     cfg.PARAMS['border'] = 10
+    cfg.PARAMS['continue_on_error']=True
 
-    rgi = ['RGI60-11.00897']
+
+    rgi = ['RGI60-11.02460']
     rgidf = salem.read_shapefile(rgi_file, cached=True)
     print(list(rgidf.columns.values))
     #indices = [(i in rgi) for i in rgidf.RGIId]
@@ -43,7 +45,7 @@ if __name__ == '__main__':
     all_divides = rgidf
 
     for gdir in gdirs:
-        if gdir.rgi_region in ['11']:
+        if gdir.rgi_id in rgi:
             input_shp = gdir.get_filepath('outlines')
             input_dem = gdir.get_filepath('dem')
 
@@ -60,6 +62,8 @@ if __name__ == '__main__':
             #except:
             #    print(gdir.rgi_id,'failed')
             outline = gpd.read_file(input_shp)
+            print(outline)
+            '''
             index = rgidf[rgidf['RGIId'] == gdir.rgi_id].index
             rgidf.loc[index, 'OGGM_Area'] = [outline.area / 10 ** 6]
 
@@ -126,7 +130,8 @@ if __name__ == '__main__':
                 divide.loc[divide.index, 'CenLon'] = cenlon
                 divide.loc[divide.index, 'CenLat'] = cenlat
                 divide.loc[divide.index, 'geometry'] = new_geo
-                divide.loc[divide.index, 'OGGM_Area'] = area_km
+                divide.loc[divide.index, 'Area'] = area_km
+                divide.loc[divide.index, 'OGGM_Area'] = glaciers.Area
                 rgidf = rgidf.append(divide, ignore_index=True)
 
     sorted_rgi = rgidf.sort_values('RGIId')
@@ -138,3 +143,5 @@ if __name__ == '__main__':
                              'min_x', 'max_x', 'min_y', 'max_y', 'remarks']]
 
     sorted_rgi.to_file(os.path.join(base_dir, str(gdir.rgi_region)+'_DividedGlacierInventory.shp'))
+    print(sorted_rgi.head(8))
+            '''
