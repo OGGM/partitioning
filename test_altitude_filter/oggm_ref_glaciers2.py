@@ -50,7 +50,6 @@ if __name__ == '__main__':
             input_dem = gdir.get_filepath('dem')
 
             print(gdir.rgi_id)
-
             python = '/home/juliaeis/miniconda3/envs/test_pygeopro_env/bin/python'
             script = '/home/juliaeis/Documents/LiClipseWorkspace/partitioning-fork/test_altitude_filter/run_divides.py'
             #print(python+' ' + script + ' ' + input_shp + ' ' + input_dem + ' ' + filter_area + ' ' +filter_alt_range + ' ' + filter_perc_alt_range)
