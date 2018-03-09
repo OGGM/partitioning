@@ -15,9 +15,9 @@ if __name__ == '__main__':
 
     cfg.initialize()
 
-    filter_area = False
-    filter_alt_range = False
-    filter_perc_alt_range = False
+    filter_area = True
+    filter_alt_range = True
+    filter_perc_alt_range = True
 
 
     # check the paths
@@ -25,7 +25,7 @@ if __name__ == '__main__':
     rgi_file = '/home/juliaeis/Dokumente/rgi60/11_rgi60_CentralEurope/11_rgi60_CentralEurope.shp'
     cfg.PATHS['topo_dir'] = '/home/juliaeis/Dokumente/OGGM/input_data/topo'
     cfg.PATHS['working_dir'] = base_dir
-    #
+    cfg.PARAMS['use_intersects'] =False
     cfg.PARAMS['divides_gdf'] = gpd.GeoDataFrame()
     cfg.PARAMS['use_multiprocessing'] = False
     cfg.PARAMS['grid_dx_method'] = 'fixed'
@@ -41,7 +41,7 @@ if __name__ == '__main__':
 
     #gdirs = workflow.init_glacier_regions(rgidf, reset=False)
     gdirs = workflow.init_glacier_regions(rgidf, reset=False)
-
+    print([gdir for gdir in gdirs if gdir.rgi_id == 'RGI60-11.02460' ])
     all_divides = rgidf
 
     for gdir in gdirs:
@@ -62,7 +62,7 @@ if __name__ == '__main__':
             #    print(gdir.rgi_id,'failed')
             outline = gpd.read_file(input_shp)
             print(outline)
-            '''
+
             index = rgidf[rgidf['RGIId'] == gdir.rgi_id].index
             rgidf.loc[index, 'OGGM_Area'] = [outline.area / 10 ** 6]
 
@@ -142,5 +142,4 @@ if __name__ == '__main__':
                              'min_x', 'max_x', 'min_y', 'max_y', 'remarks']]
 
     sorted_rgi.to_file(os.path.join(base_dir, str(gdir.rgi_region)+'_DividedGlacierInventory.shp'))
-    print(sorted_rgi.head(8))
-            '''
+
