@@ -1,4 +1,5 @@
 import sys
+sys.path.append('/home/users/julia/partitioning')
 from partitioning.core import dividing_glaciers
 
 if __name__ == '__main__':
