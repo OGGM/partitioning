@@ -15,14 +15,14 @@ if __name__ == '__main__':
 
     cfg.initialize()
 
-    filter_area = True
-    filter_alt_range = True
-    filter_perc_alt_range = True
+    filter_area = False
+    filter_alt_range = False
+    filter_perc_alt_range = False
 
 
     # check the paths
     base_dir = '/home/juliaeis/Dokumente/OGGM/work_dir/partitioning_v2'
-    rgi_file = '/home/juliaeis/Dokumente/rgi60/11_rgi60_CentralEurope/11_rgi60_CentralEurope.shp'
+    rgi_file = '/home/juliaeis/Dokumente/rgi60/05_rgi60_GreenlandPeriphery/05_rgi60_GreenlandPeriphery.shp'
     cfg.PATHS['topo_dir'] = '/home/juliaeis/Dokumente/OGGM/input_data/topo'
     cfg.PATHS['working_dir'] = base_dir
     cfg.PARAMS['use_intersects'] =False
@@ -34,14 +34,15 @@ if __name__ == '__main__':
     cfg.PARAMS['continue_on_error']=True
 
 
-    rgi = ['RGI60-11.02460']
+    rgi = ['RGI60-05.14883']
     rgidf = salem.read_shapefile(rgi_file, cached=True)
-    print(list(rgidf.columns.values))
+    rgidf = rgidf[rgidf['RGIId'] == rgi[0]]
+
     #indices = [(i in rgi) for i in rgidf.RGIId]
 
     #gdirs = workflow.init_glacier_regions(rgidf, reset=False)
     gdirs = workflow.init_glacier_regions(rgidf, reset=False)
-    print([gdir for gdir in gdirs if gdir.rgi_id == 'RGI60-11.02460' ])
+
     all_divides = rgidf
 
     for gdir in gdirs:
@@ -61,7 +62,6 @@ if __name__ == '__main__':
             #except:
             #    print(gdir.rgi_id,'failed')
             outline = gpd.read_file(input_shp)
-            print(outline)
 
             index = rgidf[rgidf['RGIId'] == gdir.rgi_id].index
             rgidf.loc[index, 'OGGM_Area'] = [outline.area / 10 ** 6]
@@ -76,6 +76,7 @@ if __name__ == '__main__':
 
             for i in range(len(glaciers) - 1):
                 divide = divide.append(outline, ignore_index=True)
+
             divide['Area'] = ""
             divide['remarks'] = " "
 
@@ -105,7 +106,6 @@ if __name__ == '__main__':
                     rgidf.loc[index, 'remarks'] = ['geometry check failed']
 
             divide = divide.loc[geo_is_ok]
-
             # check area
             divide['Area'] = ""
 
@@ -117,6 +117,7 @@ if __name__ == '__main__':
             elif cor_factor > 1.2 or cor_factor < 0.8:
 
                 rgidf.loc[index, 'remarks'] = ['sum of areas did not correlate with RGI_area']
+                print('cor_factor:', cor_factor)
 
             else:
                 area_km = cor_factor * glaciers.Area
@@ -132,7 +133,8 @@ if __name__ == '__main__':
                 divide.loc[divide.index, 'Area'] = area_km
                 divide.loc[divide.index, 'OGGM_Area'] = glaciers.Area
                 rgidf = rgidf.append(divide, ignore_index=True)
-
+                print(divide.OGGM_Area.sum())
+            print(outline.Area)
     sorted_rgi = rgidf.sort_values('RGIId')
     sorted_rgi = sorted_rgi[['Area', 'OGGM_Area', 'Aspect', 'BgnDate',
                              'CenLat', 'CenLon', 'Connect', 'EndDate', 'Form',

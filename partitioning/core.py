@@ -997,10 +997,12 @@ def dividing_glaciers(input_dem, input_shp, saga_cmd=None, filter_area=False,
     # no_glaciers, all_polygon = merge_flowsheds(p_glac, watersheds)
 
     # delete files which are not needed anymore
+    '''
     for file in os.listdir(os.path.dirname(input_shp)):
         for word in ['P_glac', 'all', 'flow', 'glaciers', 'gutter', 'p_glac',
                      'pour', 'smoothed', 'snapped', 'stream', 'masked',
                      'slivers', 'filled']:
             if file.startswith(word):
                 os.remove(os.path.join(os.path.dirname(input_shp), file))
+    '''
     return no_glaciers
