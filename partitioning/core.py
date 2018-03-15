@@ -12,7 +12,6 @@ import pandas as pd
 import geopandas as gpd
 from scipy.signal import medfilt
 import pickle
-import matplotlib.pyplot as plt
 
 from skimage import img_as_float
 from skimage.feature import peak_local_max
