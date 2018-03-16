@@ -144,22 +144,22 @@ def check_for_islands(gpd_obj, outline):
         return original
 
 
-def postprocessing(rgidf, gdir, input_shp, filter):
+def postprocessing(new_rgi, gdir, input_shp, filter):
     outline = gpd.read_file(input_shp)
 
-    index = rgidf[rgidf['RGIId'] == gdir.rgi_id].index
-    rgidf.loc[index, 'OGGM_Area'] = [outline.area / 10 ** 6]
+    index = new_rgi[new_rgi['RGIId'] == gdir.rgi_id].index
+    new_rgi.loc[index, 'OGGM_Area'] = [outline.area / 10 ** 6]
 
     if os.path.exists(
             os.path.join(os.path.dirname(input_shp), 'divides.shp')):
         glaciers = gpd.read_file(
             os.path.join(os.path.dirname(input_shp), 'divides.shp'))
     else:
-        return rgidf
+        return new_rgi
 
     glaciers = remove_multipolygon(glaciers)
     glaciers = check_for_islands(glaciers, outline)
-    glaciers = glaciers.to_crs(rgidf.crs)
+    glaciers = glaciers.to_crs(new_rgi.crs)
 
     filter_area = False
     filter_alt_range = False
@@ -178,14 +178,17 @@ def postprocessing(rgidf, gdir, input_shp, filter):
                                          filter_perc_alt_range)
     except:
         keep = True
-        rgidf.loc[index, 'remarks'] = ['no filter was used (error in merging)']
+        new_rgi.loc[index, 'remarks'] = ['no filter was used (error in merging)']
     divide = copy.deepcopy(outline)
 
-    for i in range(len(glaciers)):
+    for i in range(len(glaciers)-1):
         divide = divide.append(outline, ignore_index=True)
 
     divide['Area'] = ""
     divide['remarks'] = " "
+    if 'level_0' in glaciers.columns:
+        glaciers = glaciers.drop('level_0', axis=1)
+    glaciers = glaciers.reset_index()
     for i in glaciers.index:
         divide.loc[i]['geometry'] = glaciers.loc[i]['geometry']
     geo_is_ok = []
@@ -212,7 +215,7 @@ def postprocessing(rgidf, gdir, input_shp, filter):
     divide = divide.append(failed, ignore_index=False)
 
     # change RGIId
-    new_id = [divide.loc[i, 'RGIId'] + '_d' + str(i + 1).zfill(2) for i
+    new_id = [gdir.rgi_id + '_d' + str(i + 1).zfill(2) for i
               in range(len(glaciers))]
     divide['RGIId'] = new_id
 
@@ -223,12 +226,13 @@ def postprocessing(rgidf, gdir, input_shp, filter):
     divide['Area'] = ""
 
     cor_factor = float(outline.Area) / glaciers.Area.sum()
+    divide = divide[~divide.geometry.is_empty]
 
     if len(divide) < 2:
-        rgidf.loc[index, 'remarks'] = [
+        new_rgi.loc[index, 'remarks'] = [
             gdir.rgi_id + ' is too small or has no valid divide...']
     elif not keep:
-        rgidf.loc[index, 'remarks'] = [' all divides were filtered']
+        new_rgi.loc[index, 'remarks'] = [' all divides were filtered']
     else:
         area_km = cor_factor * glaciers.Area
 
@@ -242,21 +246,21 @@ def postprocessing(rgidf, gdir, input_shp, filter):
         # divide.loc[divide.index, 'geometry'] = new_geo
         divide.loc[divide.index, 'Area'] = area_km
         divide.loc[divide.index, 'OGGM_Area'] = glaciers.Area
-        rgidf = rgidf.append(divide, ignore_index=True)
+        new_rgi = new_rgi.append(divide, ignore_index=True)
 
     if cor_factor > 1.2 or cor_factor < 0.8:
-        rgidf.loc[index, 'remarks'] = [
+        new_rgi.loc[index, 'remarks'] = [
             'sum of areas did not correlate with RGI_area']
 
-    return rgidf
+    return new_rgi
 
 if __name__ == '__main__':
 
     cfg.initialize()
 
     # check the paths
-    base_dir = '/home/juliaeis/Schreibtisch/cluster/partitioning_results/no_filter'
-    rgi_file = '/home/juliaeis/Dokumente/rgi60/05_rgi60_GreenlandPeriphery/05_rgi60_GreenlandPeriphery.shp'
+    base_dir = '/home/juliaeis/Schreibtisch/cluster/partitioning_results/no_filter/per_glacier'
+    #rgi_file = '/home/juliaeis/Dokumente/rgi60/05_rgi60_GreenlandPeriphery/05_rgi60_GreenlandPeriphery.shp'
     rgi_file = '/home/juliaeis/Dokumente/rgi60/09_rgi60_RussianArctic/09_rgi60_RussianArctic.shp'
 
     cfg.PATHS['topo_dir'] = '/home/juliaeis/Dokumente/OGGM/input_data/topo'
@@ -271,11 +275,12 @@ if __name__ == '__main__':
     rgidf = salem.read_shapefile(rgi_file, cached=True)
     rgi = ['RGI60-09.00123', 'RGI60-09.00518', 'RGI60-09.00572', 'RGI60-09.00672 ',
            'RGI60-09.00820', 'RGI60-09.00927']
-    #rgi = ['RGI60-05.10315']
-    rgi = ['RGI60-09.00123']
+    rgi = ['RGI60-09.00051']
+    #rgi = ['RGI60-09.00123']
     indices = [(i in rgi) for i in rgidf.RGIId]
     rgidf = gpd.GeoDataFrame(rgidf.loc[indices], crs=rgidf.crs)
 
+    #rgidf = gpd.GeoDataFrame(rgidf, crs=rgidf.crs)
     gdirs = workflow.init_glacier_regions(rgidf, reset=False)
 
     all_divides = rgidf
@@ -292,7 +297,7 @@ if __name__ == '__main__':
 
         # n = subprocess.call(python+' ' + script + ' ' + input_shp + ' ' + input_dem + ' ' +
         #                           str(filter_area) + ' ' + str(filter_alt_range) + ' ' + str(filter_perc_alt_range), shell=True) #+ ' > /dev/null')
-        os.system(python + ' ' + script + ' ' + input_shp + ' ' + input_dem) # + ' > /dev/null')
+        #os.system(python + ' ' + script + ' ' + input_shp + ' ' + input_dem) # + ' > /dev/null')
         # print(gdir.rgi_id+' is divided into '+str(int(n))+' parts')
         # except:
         #    print(gdir.rgi_id,'failed')
@@ -301,9 +306,10 @@ if __name__ == '__main__':
     for filter in filter_option:
         new_rgi = copy.deepcopy(rgidf)
         for gdir in gdirs:
-            new_rgi = postprocessing(new_rgi, gdir, input_shp, filter)
+            new_rgi = postprocessing(new_rgi, gdir, gdir.get_filepath('outlines'), filter)
 
         sorted_rgi = new_rgi.sort_values('RGIId')
+        '''
         sorted_rgi = sorted_rgi[['Area', 'OGGM_Area', 'Aspect', 'BgnDate',
                                  'CenLat', 'CenLon', 'Connect', 'EndDate',
                                  'Form', 'GLIMSId', 'Linkages', 'Lmax', 'Name',
@@ -311,6 +317,7 @@ if __name__ == '__main__':
                                  'Status', 'Surging', 'TermType', 'Zmax',
                                  'Zmed', 'Zmin', 'geometry', 'min_x', 'max_x',
                                  'min_y', 'max_y', 'remarks']]
+        '''
         new_name = str(gdir.rgi_region) + '_dgi60_'+filter+'.shp'
         sorted_rgi.to_file(os.path.join(base_dir, new_name))
 
