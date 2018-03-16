@@ -61,6 +61,7 @@ if __name__ == '__main__':
             #print(gdir.rgi_id+' is divided into '+str(int(n))+' parts')
             #except:
             #    print(gdir.rgi_id,'failed')
+
             outline = gpd.read_file(input_shp)
 
             index = rgidf[rgidf['RGIId'] == gdir.rgi_id].index
@@ -117,7 +118,6 @@ if __name__ == '__main__':
             elif cor_factor > 1.2 or cor_factor < 0.8:
 
                 rgidf.loc[index, 'remarks'] = ['sum of areas did not correlate with RGI_area']
-                print('cor_factor:', cor_factor)
 
             else:
                 area_km = cor_factor * glaciers.Area
