@@ -1,12 +1,26 @@
-from oggm import workflow, cfg
-from oggm.core.gis import _check_geometry
-import salem
-
 import os
-import numpy as np
-import copy
+
+from oggm import cfg, workflow
+from oggm.core.gis import _check_geometry
 import geopandas as gpd
+import salem
+import time
+import multiprocessing as mp
+import numpy as np
 import pandas as pd
+import zipfile
+import warnings
+import copy
+
+warnings.simplefilter(action='ignore', category=FutureWarning)
+
+
+def run_div(gdir):
+    input_shp = gdir.get_filepath('outlines')
+    input_dem = gdir.get_filepath('dem')
+
+    script = os.path.join(project, 'partitioning/examples/run_divides.py')
+    os.system(python + ' ' + script + ' ' + input_shp + ' ' + input_dem)
 
 
 def _merge_sliver(gpd_obj, polygon):
@@ -179,6 +193,7 @@ def postprocessing(rgidf, gdir, input_shp, filter):
     except:
         keep = True
         rgidf.loc[index, 'remarks'] = ['no filter was used (error in merging)']
+
     divide = copy.deepcopy(outline)
 
     for i in range(len(glaciers)):
@@ -229,7 +244,6 @@ def postprocessing(rgidf, gdir, input_shp, filter):
             gdir.rgi_id + ' is too small or has no valid divide...']
     elif not keep:
         rgidf.loc[index, 'remarks'] = [' all divides were filtered']
-        print(rgidf['RGIId'])
     else:
         area_km = cor_factor * glaciers.Area
 
@@ -251,62 +265,54 @@ def postprocessing(rgidf, gdir, input_shp, filter):
 
     return rgidf
 
+
 if __name__ == '__main__':
 
     cfg.initialize()
-
-    # check the paths
-    base_dir = '/home/juliaeis/Schreibtisch/cluster/partitioning_results/no_filter'
-    rgi_file = '/home/juliaeis/Dokumente/rgi60/05_rgi60_GreenlandPeriphery/05_rgi60_GreenlandPeriphery.shp'
-    rgi_file = '/home/juliaeis/Dokumente/rgi60/09_rgi60_RussianArctic/09_rgi60_RussianArctic.shp'
-
-    cfg.PATHS['topo_dir'] = '/home/juliaeis/Dokumente/OGGM/input_data/topo'
-    cfg.PATHS['working_dir'] = base_dir
-    cfg.PARAMS['use_intersects'] = False
-    cfg.PARAMS['use_multiprocessing'] = False
+    cfg.PARAMS['continue_on_error'] = True
+    cfg.PARAMS['use_multiprocessing'] = True
+    # set dem resolution to 40 meters
     cfg.PARAMS['grid_dx_method'] = 'fixed'
     cfg.PARAMS['fixed_dx'] = 40
+    cfg.PARAMS['use_intersects'] = False
     cfg.PARAMS['border'] = 10
-    cfg.PARAMS['continue_on_error'] = True
+    cfg.PATHS['working_dir'] = os.environ.get('S_WORKDIR')
+
+    rgi_region = str(os.environ.get('REGION')).zfill(2)
+    rgi_file = os.environ.get('RGI_DATA')
+    dir_name = [d for d in os.listdir(rgi_file) if
+                d.startswith(rgi_region) and d.endswith(".zip")]
+    zip_ref = zipfile.ZipFile(os.path.join(rgi_file, dir_name[0]), 'r')
+    zip_ref.extractall(cfg.PATHS['working_dir'])
+    shp_name = [name for name in zip_ref.namelist() if name.endswith(".shp")][
+        0]
+    zip_ref.close()
+    rgi_file = os.path.join(cfg.PATHS['working_dir'], shp_name)
 
     rgidf = salem.read_shapefile(rgi_file, cached=True)
-    rgi = ['RGI60-09.00123', 'RGI60-09.00518', 'RGI60-09.00572', 'RGI60-09.00672 ',
-           'RGI60-09.00820', 'RGI60-09.00927']
-    #rgi = ['RGI60-05.10315']
-    rgi = ['RGI60-09.00123']
-    indices = [(i in rgi) for i in rgidf.RGIId]
-    rgidf = gpd.GeoDataFrame(rgidf.loc[indices], crs=rgidf.crs)
-
+    rgidf['remarks'] = ""
     gdirs = workflow.init_glacier_regions(rgidf, reset=False)
 
-    all_divides = rgidf
+    # path to python 2.7
+    python = '/home/users/julia/python2_env/bin/python'
+    # path where partioning is located
+    project = '/home/users/julia'
+    script = os.path.join(project, 'partitioning/examples/run_divides.py')
 
-    for gdir in gdirs:
+    start1 = time.time()
+    pool = mp.Pool()
+    pool.map(run_div, gdirs)
+    pool.close()
+    pool.join()
 
-        input_shp = gdir.get_filepath('outlines')
-        input_dem = gdir.get_filepath('dem')
-        divides_shp = os.path.join(os.path.dirname(input_shp), 'divides.shp')
-
-        print(gdir.rgi_id)
-        #python = '/home/juliaeis/miniconda3/envs/test_pygeopro_env/bin/python'
-        #script = '/home/juliaeis/Documents/LiClipseWorkspace/partitioning-fork/test_altitude_filter/run_divides.py'
-        # print(python+' ' + script + ' ' + input_shp + ' ' + input_dem + ' ' + filter_area + ' ' +filter_alt_range + ' ' + filter_perc_alt_range)
-
-        # n = subprocess.call(python+' ' + script + ' ' + input_shp + ' ' + input_dem + ' ' +
-        #                           str(filter_area) + ' ' + str(filter_alt_range) + ' ' + str(filter_perc_alt_range), shell=True) #+ ' > /dev/null')
-        #os.system(
-        #    python + ' ' + script + ' ' + input_shp + ' ' + input_dem + ' ' + str(
-        #        filter_area) + ' ' + str(filter_alt_range) + ' ' + str(
-        #       filter_perc_alt_range))  # + ' > /dev/null')
-        # print(gdir.rgi_id+' is divided into '+str(int(n))+' parts')
-        # except:
-        #    print(gdir.rgi_id,'failed')
+    filter_option = ['no_filter', 'alt_filter', 'all_filter']
 
     filter_option = ['no_filter', 'alt_filter', 'all_filter']
     for filter in filter_option:
         new_rgi = copy.deepcopy(rgidf)
         for gdir in gdirs:
-            new_rgi = postprocessing(new_rgi, gdir, input_shp, filter)
+            new_rgi = postprocessing(new_rgi, gdir,
+                                     gdir.get_filepath('outlines'), filter)
 
         sorted_rgi = new_rgi.sort_values('RGIId')
         sorted_rgi = sorted_rgi[['Area', 'OGGM_Area', 'Aspect', 'BgnDate',
@@ -317,5 +323,4 @@ if __name__ == '__main__':
                                  'Zmed', 'Zmin', 'geometry', 'min_x', 'max_x',
                                  'min_y', 'max_y', 'remarks']]
         new_name = str(gdir.rgi_region) + '_dgi60_'+filter+'.shp'
-        sorted_rgi.to_file(os.path.join(base_dir, new_name))
-
+        sorted_rgi.to_file(os.path.join(cfg.PATHS['working_dir'], new_name))

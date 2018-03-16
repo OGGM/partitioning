@@ -433,8 +433,7 @@ def _create_p_glac(shp):
     return p_glac
 
 
-def merge_flows(shed_shp, pour_point_shp, filter_area, filter_alt_range,
-                filter_perc_alt_range):
+def merge_flows(shed_shp, pour_point_shp):
     """merge the flowsheds together. First, P_glac(circle which radius depends
     on the flowaccumulation) is calculated for each pour point. If one or more
     fowsheds overlaie by the area of this circle, they are merged together.
@@ -534,13 +533,6 @@ def merge_flows(shed_shp, pour_point_shp, filter_area, filter_alt_range,
 
     glaciers['Perc_Area'] = glaciers.Area / glaciers.loc[0].Area
 
-    print(glaciers)
-    glaciers, stop = _filter_divides(glaciers, eval(filter_area),
-                                     eval(filter_alt_range),
-                                     eval(filter_perc_alt_range))
-    print(glaciers)
-    if stop is False:
-        return 1
     # save glaciers
     glaciers['keep'] = glaciers['keep'].astype('int')
     glaciers.to_file(os.path.join(os.path.dirname(pour_point_shp),
@@ -964,8 +956,7 @@ def preprocessing(dem, shp, saga_cmd=None):
     return gutter_dem
 
 
-def dividing_glaciers(input_dem, input_shp, saga_cmd=None, filter_area=False,
-                      filter_alt_range=False, filter_perc_alt_range=False):
+def dividing_glaciers(input_dem, input_shp, saga_cmd=None):
     """ This is the main structure of the algorithm
 
     Parameters
@@ -986,8 +977,7 @@ def dividing_glaciers(input_dem, input_shp, saga_cmd=None, filter_area=False,
         gutter_dem = preprocessing(input_dem, input_shp)
     pour_points_dir = identify_pour_points(gutter_dem)
     flowsheds_dir = flowshed_calculation(gutter_dem, pour_points_dir)
-    no_glaciers = merge_flows(flowsheds_dir, pour_points_dir, filter_area,
-                              filter_alt_range, filter_perc_alt_range)
+    no_glaciers = merge_flows(flowsheds_dir, pour_points_dir)
 
     # merge_flowsheds(p_glac, flowsheds_dir)
 
