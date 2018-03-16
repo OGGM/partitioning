@@ -534,7 +534,6 @@ def merge_flows(shed_shp, pour_point_shp):
     glaciers['Perc_Area'] = glaciers.Area / glaciers.loc[0].Area
 
     # save glaciers
-    glaciers['keep'] = glaciers['keep'].astype('int')
     glaciers.to_file(os.path.join(os.path.dirname(pour_point_shp),
                                   'divides.shp'))
     return len(glaciers)

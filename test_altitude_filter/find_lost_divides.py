@@ -229,7 +229,6 @@ def postprocessing(rgidf, gdir, input_shp, filter):
             gdir.rgi_id + ' is too small or has no valid divide...']
     elif not keep:
         rgidf.loc[index, 'remarks'] = [' all divides were filtered']
-        print(rgidf['RGIId'])
     else:
         area_km = cor_factor * glaciers.Area
 
@@ -288,16 +287,12 @@ if __name__ == '__main__':
         divides_shp = os.path.join(os.path.dirname(input_shp), 'divides.shp')
 
         print(gdir.rgi_id)
-        #python = '/home/juliaeis/miniconda3/envs/test_pygeopro_env/bin/python'
-        #script = '/home/juliaeis/Documents/LiClipseWorkspace/partitioning-fork/test_altitude_filter/run_divides.py'
-        # print(python+' ' + script + ' ' + input_shp + ' ' + input_dem + ' ' + filter_area + ' ' +filter_alt_range + ' ' + filter_perc_alt_range)
+        python = '/home/juliaeis/miniconda3/envs/test_pygeopro_env/bin/python'
+        script = '/home/juliaeis/Documents/LiClipseWorkspace/partitioning-fork/test_altitude_filter/run_divides.py'
 
         # n = subprocess.call(python+' ' + script + ' ' + input_shp + ' ' + input_dem + ' ' +
         #                           str(filter_area) + ' ' + str(filter_alt_range) + ' ' + str(filter_perc_alt_range), shell=True) #+ ' > /dev/null')
-        #os.system(
-        #    python + ' ' + script + ' ' + input_shp + ' ' + input_dem + ' ' + str(
-        #        filter_area) + ' ' + str(filter_alt_range) + ' ' + str(
-        #       filter_perc_alt_range))  # + ' > /dev/null')
+        os.system(python + ' ' + script + ' ' + input_shp + ' ' + input_dem) # + ' > /dev/null')
         # print(gdir.rgi_id+' is divided into '+str(int(n))+' parts')
         # except:
         #    print(gdir.rgi_id,'failed')
