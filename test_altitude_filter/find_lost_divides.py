@@ -278,9 +278,9 @@ if __name__ == '__main__':
     rgi = ['RGI60-09.00051']
     #rgi = ['RGI60-09.00123']
     indices = [(i in rgi) for i in rgidf.RGIId]
-    rgidf = gpd.GeoDataFrame(rgidf.loc[indices], crs=rgidf.crs)
+    #rgidf = gpd.GeoDataFrame(rgidf.loc[indices], crs=rgidf.crs)
 
-    #rgidf = gpd.GeoDataFrame(rgidf, crs=rgidf.crs)
+    rgidf = gpd.GeoDataFrame(rgidf, crs=rgidf.crs)
     gdirs = workflow.init_glacier_regions(rgidf, reset=False)
 
     all_divides = rgidf

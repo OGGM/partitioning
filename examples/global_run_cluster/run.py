@@ -196,11 +196,14 @@ def postprocessing(rgidf, gdir, input_shp, filter):
 
     divide = copy.deepcopy(outline)
 
-    for i in range(len(glaciers)):
+    for i in range(len(glaciers)-1):
         divide = divide.append(outline, ignore_index=True)
 
     divide['Area'] = ""
     divide['remarks'] = " "
+    if 'level_0' in glaciers.columns:
+        glaciers = glaciers.drop('level_0', axis=1)
+    glaciers = glaciers.reset_index()
     for i in glaciers.index:
         divide.loc[i]['geometry'] = glaciers.loc[i]['geometry']
     geo_is_ok = []
@@ -234,6 +237,7 @@ def postprocessing(rgidf, gdir, input_shp, filter):
     for i in divide[divide.type != 'Polygon'].index:
         divide.loc[i, 'remarks'] = 'type != Polygon'
 
+    divide = divide[~divide.geometry.is_empty]
     # check area
     divide['Area'] = ""
 
