@@ -12,7 +12,6 @@ import pandas as pd
 import geopandas as gpd
 from scipy.signal import medfilt
 import pickle
-import matplotlib.pyplot as plt
 
 from skimage import img_as_float
 from skimage.feature import peak_local_max
@@ -434,8 +433,7 @@ def _create_p_glac(shp):
     return p_glac
 
 
-def merge_flows(shed_shp, pour_point_shp, filter_area, filter_alt_range,
-                filter_perc_alt_range):
+def merge_flows(shed_shp, pour_point_shp):
     """merge the flowsheds together. First, P_glac(circle which radius depends
     on the flowaccumulation) is calculated for each pour point. If one or more
     fowsheds overlaie by the area of this circle, they are merged together.
@@ -529,28 +527,54 @@ def merge_flows(shed_shp, pour_point_shp, filter_area, filter_alt_range,
         per_alt_range = glaciers.loc[:, 'Alt_Range']/max_alt
         glaciers.loc[:, 'Perc_Alt_Range'] = per_alt_range
 
-    glaciers.loc[:, 'Area'] = glaciers.geometry.area
+    glaciers.loc[:, 'Area'] = glaciers.geometry.area/10**6
     glaciers = glaciers.sort_values('Area', ascending=False)
     glaciers = glaciers.reset_index()
 
     glaciers['Perc_Area'] = glaciers.Area / glaciers.loc[0].Area
 
-    glaciers, stop = _filter_divides(glaciers, eval(filter_area),
-                                     eval(filter_alt_range),
-                                     eval(filter_perc_alt_range))
-    if stop is False:
-        return 1
     # save glaciers
-    i = 1
+    glaciers.to_file(os.path.join(os.path.dirname(pour_point_shp),
+                                  'divides.shp'))
+    return len(glaciers)
+    '''
+    divide = out1
+    for i in range(len(glaciers)-1):
+        divide = divide.append(out1, ignore_index=True)
+    divide['Area'] = ""
+
+    for i in range(len(glaciers)):
+        divide.loc[i]['geometry'] = glaciers.loc[i]['geometry']
+    divide['remarks'] = ""
+    new_id = [divide.loc[i, 'RGIId']+'_d' + str(i+1).zfill(2) for i in
+              range(len(glaciers))]
+    area_km = [g.area/10**6 for g in glaciers.geometry]
+    cenlon = [g.centroid.xy[0][0] for g in divide.geometry]
+    cenlat = [g.centroid.xy[1][0] for g in divide.geometry]
+
+    divide.loc[divide.index, 'OGGM_area'] = area_km
+    divide.loc[divide.index, 'RGIId'] = new_id
+    divide.loc[divide.index, 'CenLon'] = cenlon
+    divide.loc[divide.index, 'CenLat'] = cenlat
+    divide = divide[['Area', 'OGGM_area', 'Aspect', 'BgnDate', 'CenLat', 'CenLon',
+                     'Connect', 'EndDate', 'Form', 'GLIMSId', 'Linkages',
+                     'Lmax', 'Name', 'O1Region', 'O2Region', 'RGIId', 'Slope',
+                     'Status', 'Surging', 'TermType', 'Zmax', 'Zmed', 'Zmin',
+                     'geometry', 'min_x', 'max_x', 'min_y', 'max_y', 'remarks']]
+    print(divide)
+    divide.to_file(os.path.join(os.path.dirname(shed_shp),
+                                out1.loc[0, 'RGIId'] + '_d.shp'))
+
     for id in glaciers.index:
-        dir_name = 'divide_'+str(i).zfill(2)
-        divide_shp = os.path.join(os.path.dirname(shed_shp), dir_name)
+        dir_name = out1.loc[0]['RGIId']+'_d'+str(i).zfill(2)
+        divide_shp = os.path.join(os.path.dirname(os.path.dirname(shed_shp)),
+                                  dir_name)
         if not os.path.isdir(divide_shp):
             os.makedirs(divide_shp)
         divide = out1.loc[0][:]
         divide.loc['geometry'] = glaciers.loc[id, 'geometry']
         # update area
-        divide.loc['Area'] = divide.geometry.area
+        divide.loc['Area'] = divide.geometry.area/10**6
 
         divide = gpd.GeoDataFrame([divide], geometry=[divide.geometry],
                                   crs=crs)
@@ -558,7 +582,7 @@ def merge_flows(shed_shp, pour_point_shp, filter_area, filter_alt_range,
         divide.to_file(os.path.join(divide_shp, 'outlines.shp'))
         i += 1
     # print('finish flows :', time.time()-start)
-    return len(glaciers)
+    '''
 
 
 def merge_sliver_poly(glacier_poly, polygon):
@@ -931,8 +955,7 @@ def preprocessing(dem, shp, saga_cmd=None):
     return gutter_dem
 
 
-def dividing_glaciers(input_dem, input_shp, saga_cmd=None, filter_area=False,
-                      filter_alt_range=False, filter_perc_alt_range=False):
+def dividing_glaciers(input_dem, input_shp, saga_cmd=None):
     """ This is the main structure of the algorithm
 
     Parameters
@@ -953,8 +976,7 @@ def dividing_glaciers(input_dem, input_shp, saga_cmd=None, filter_area=False,
         gutter_dem = preprocessing(input_dem, input_shp)
     pour_points_dir = identify_pour_points(gutter_dem)
     flowsheds_dir = flowshed_calculation(gutter_dem, pour_points_dir)
-    no_glaciers = merge_flows(flowsheds_dir, pour_points_dir, filter_area,
-                              filter_alt_range, filter_perc_alt_range)
+    no_glaciers = merge_flows(flowsheds_dir, pour_points_dir)
 
     # merge_flowsheds(p_glac, flowsheds_dir)
 
@@ -963,10 +985,12 @@ def dividing_glaciers(input_dem, input_shp, saga_cmd=None, filter_area=False,
     # no_glaciers, all_polygon = merge_flowsheds(p_glac, watersheds)
 
     # delete files which are not needed anymore
+    '''
     for file in os.listdir(os.path.dirname(input_shp)):
         for word in ['P_glac', 'all', 'flow', 'glaciers', 'gutter', 'p_glac',
                      'pour', 'smoothed', 'snapped', 'stream', 'masked',
                      'slivers', 'filled']:
             if file.startswith(word):
                 os.remove(os.path.join(os.path.dirname(input_shp), file))
+    '''
     return no_glaciers
