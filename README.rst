@@ -133,7 +133,7 @@ to call the dividing algortihm from the console.
 Postprocessing
 ~~~~~~~~~~~~~~
 
-We developed additionally a postprocessing function, which contains a check for the geometry, the area and some filter methods. This function creates a shapefile whcih contains
+We developed additionally a postprocessing function, which contains a check for the geometry and the area, as well as some filter methods. This function creates a shapefile whcih contains
 the same glaciers as the RGI files and addionally the shapes of the divides. This file can then be used by OGGM as a new input file and replaces the RGI-files.
 Shapes that can't be corrected during the postprocessing, needs a manual correction and will have a remark at the output file.
 We offer different filter methods:
