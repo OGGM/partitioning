@@ -133,14 +133,17 @@ to call the dividing algortihm from the console.
 Postprocessing
 ~~~~~~~~~~~~~~
 
-
-Aditionally, we implement 3 methods to filter some of the divided glaciers:
+We developed additionally a postprocessing function, which contains a check for the geometry, the area and some filter methods. This function creates a shapefile whcih contains
+the same glaciers as the RGI files and addionally the shapes of the divides. This file can then be used by OGGM as a new input file and replaces the RGI-files.
+Shapes that can't be corrected during the postprocessing, needs a manual correction and will have a remark at the output file.
+We offer different filter methods:
 
 - area filter               : keep a divide only if it's area is not smaller than 2% of the largest divide
 - altutide filter           : keep a divide only if the absolute altitude range of the divide is larger than 100m
 - percentual altitude filter: keep a divide only if the altitude range of the divide is larger than 10% of the glaciers total altitude range
 
-To use one of these filter, set it's boolean to True (default: False). We recomment to use the two altitude filters.
+Per default these all these filters are set to False. Calling the postprocessing function with the option filter='all', will set all methods to True.
+The option filter='alt' only uses the altitude filter and the percentual altitude filter. An example for the Oetztal can be found `here`_
 
 
 Get in touch
@@ -155,3 +158,4 @@ Report bugs, share your ideas or view the source code on `GitHub`_.
 .. _SAGA: http://www.saga-gis.org/en/index.html
 .. _GDAL: http://www.gdal.org/
 .. _GitHub: http://github.com/OGGM/partitioning
+.. _here: https://github.com/OGGM/partitioning/blob/cluster/examples/oetztal.py
