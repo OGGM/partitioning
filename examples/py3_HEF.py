@@ -4,13 +4,14 @@ from oggm import cfg,  workflow
 from oggm.utils import get_demo_file
 import matplotlib.pyplot as plt
 import geopandas as gpd
+from partitioning.postprocessing_py3 import postprocessing
 
 if __name__ == '__main__':
 
     cfg.initialize()
 
     # Set Paths for OGGM
-    cfg.PATHS['working_dir'] = 'path to working directory'
+    cfg.PATHS['working_dir'] = '/home/juliaeis/Dokumente/OGGM/work_dir/Hackaton'
 
 
     # set dem resolution to 40 meters
@@ -28,10 +29,13 @@ if __name__ == '__main__':
     input_dem = hef.get_filepath('dem')
 
     # set paths to python 2.7 and to the partitioning package
-    python = 'path to python 2.7'
-    project = 'path to the partitioning package'
 
-    # run_divides with python2.7
+    #python = 'path to python 2.7'
+    #project = 'path to the partitioning package'
+    python = '/home/juliaeis/miniconda3/envs/test_pygeopro_env/bin/python'
+    project = '/home/juliaeis/Dokumente/OGGM/work_dir/partitioning'
+
+    #run_divides with python2.7
     script = os.path.join(project, 'examples/run_divides.py')
     os.system(python + ' ' + script + ' ' + input_shp + ' ' + input_dem)
 
@@ -39,7 +43,4 @@ if __name__ == '__main__':
 
     print('Hintereisferner was divided in '+ str(len(divides)) + ' parts')
 
-    #plot outlines of the divides
-    divides.plot()
-    plt.show()
 

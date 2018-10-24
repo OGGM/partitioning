@@ -68,7 +68,7 @@ You can run the algorithm with the following lines:
     n = dividing_glaciers(input_shp=shp, input_dem=dem)
     print 'number of divides:', n
 
-This creates automatically a subdirectory for each divide, where a shapefile containing the outlines is located.
+This creates automatically a shapefile containing all calculated divides.
 
 Second example - Python 3 and OGGM
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -79,48 +79,41 @@ We start with the usual first steps for OGGM:
 
 .. code-block:: python
 
-    import os
-    from oggm import cfg, tasks, graphics, workflow
+   import os
+
+    from oggm import cfg,  workflow
     from oggm.utils import get_demo_file
     import matplotlib.pyplot as plt
     import geopandas as gpd
 
-    cfg.initialize()
-    cfg.set_divides_db()
-    cfg.PARAMS['use_multiprocessing'] = False
-    # set dem resolution to 40 meters
-    cfg.PARAMS['grid_dx_method'] = 'fixed'
-    cfg.PARAMS['fixed_dx'] = 40
-    cfg.PARAMS['border'] = 10
+    if __name__ == '__main__':
 
-    entity = gpd.read_file(get_demo_file('Hintereisferner.shp'))
-    hef = workflow.init_glacier_regions(entity, reset=False)[0]
+        cfg.initialize()
 
-    # get path to the input data
-    input_shp = hef.get_filepath('outlines', div_id=0)
-    input_dem = hef.get_filepath('dem', div_id=0)
+        # Set Paths for OGGM
+        cfg.PATHS['working_dir'] = 'path to working directory'
+
+        # set dem resolution to 40 meters
+        cfg.PARAMS['grid_dx_method'] = 'fixed'
+        cfg.PARAMS['fixed_dx'] = 40
+        cfg.PARAMS['border'] = 10
+        cfg.PARAMS['use_intersects'] = False
+        cfg.PARAMS['use_multiprocessing'] = False
+
+        # get example shapefile initialize the model
+        entity = gpd.read_file(get_demo_file('Hintereisferner_RGI6.shp'))
+        hef = workflow.init_glacier_regions(entity, reset=False)[0]
+
+        input_shp = hef.get_filepath('outlines')
+        input_dem = hef.get_filepath('dem')
 
 We can use the get_filepath function to get the required input data.
-
-Aditionally, we implement 3 methods to filter some of the divided glaciers:
-
-- area filter               : keep a divide only if it's area is not smaller than 2% of the largest divide
-- altutide filter           : keep a divide only if the absolute altitude range of the divide is larger than 100m
-- percentual altitude filter: keep a divide only if the altitude range of the divide is larger than 10% of the glaciers total altitude range
-
-To use one of these filter, set it's boolean to True (default: False). We recomment to use the two altitude filters.
 
 Next, we have to set the path to the Python 2.7 executable, where the pygeoprocessing package, as well as all the other required packages are installed. We also need the path from the partitioning package
 to call the dividing algortihm from the console.
 
 
-
 .. code-block:: python
-
-    # filter options
-    f_area = False
-    f_alt_range = True
-    f_perc_alt_range = True
 
     # set paths to python 2.7 and to the partitioning package
     python = 'path to python 2.7'
@@ -129,21 +122,29 @@ to call the dividing algortihm from the console.
     script = os.path.join(project, 'partitioning/examples/run_divides.py')
 
     # run code from your console (PYTHON 2.7!)
-    os.system(python + ' ' + script + ' ' + input_shp + ' ' + input_dem + ' ' +
-              str(f_area) + ' ' + str(f_alt_range) + ' ' + str(f_perc_alt_range))
+    os.system(python + ' ' + script + ' ' + input_shp + ' ' + input_dem)
 
-    print('Hintereisferner is divided into', hef.n_divides, 'parts.')
+    # reads the shapefile with the divides
+    divides = gpd.read_file(os.path.join(hef.dir,'divides.shp'))
 
-With the following lines OGGM compute the centerlines and plot the result.
+    print('Hintereisferner was divided in '+ str(len(divides)) + ' parts')
 
-.. code-block:: python
 
-    tasks.glacier_masks(hef)
-    tasks.compute_centerlines(hef)
-    graphics.plot_centerlines(hef)
-    plt.show()
+Postprocessing
+~~~~~~~~~~~~~~
 
-.. figure:: _pictures/RGI50-11.00897.png
+We developed additionally a postprocessing function, which contains a check for the geometry and the area, as well as some filter methods. This function creates a shapefile whcih contains
+the same glaciers as the RGI files and addionally the shapes of the divides. This file can then be used by OGGM as a new input file and replaces the RGI-files.
+Shapes that can't be corrected during the postprocessing, needs a manual correction and will have a remark at the output file.
+We offer different filter methods:
+
+- area filter               : keep a divide only if it's area is not smaller than 2% of the largest divide
+- altutide filter           : keep a divide only if the absolute altitude range of the divide is larger than 100m
+- percentual altitude filter: keep a divide only if the altitude range of the divide is larger than 10% of the glaciers total altitude range
+
+Per default these all these filters are set to False. Calling the postprocessing function with the option filter='all', will set all methods to True.
+The option filter='alt' only uses the altitude filter and the percentual altitude filter. An example for the Oetztal can be found `here`_
+
 
 Get in touch
 ------------
@@ -157,3 +158,4 @@ Report bugs, share your ideas or view the source code on `GitHub`_.
 .. _SAGA: http://www.saga-gis.org/en/index.html
 .. _GDAL: http://www.gdal.org/
 .. _GitHub: http://github.com/OGGM/partitioning
+.. _here: https://github.com/OGGM/partitioning/blob/cluster/examples/oetztal.py
