@@ -1,13 +1,11 @@
-
 import os
 import sys
 import numpy as np
 import math
-
+import shapely
 from shapely.geometry import mapping, shape
 import rasterio
 from rasterio.mask import mask
-from pygeoprocessing import routing
 import pandas as pd
 import geopandas as gpd
 from scipy.signal import medfilt
@@ -17,6 +15,12 @@ from skimage import img_as_float
 from skimage.feature import peak_local_max
 from shapely.geometry import Point, Polygon, MultiPolygon
 from shapely.ops import cascaded_union
+from shapely.ops import unary_union
+from osgeo import gdal
+import shutil
+
+# pytsheds is used and this script can be run under python3 now.
+from pysheds.grid import Grid
 
 
 def _raster_mask(input_dem, polygon, out_name):
@@ -36,18 +40,18 @@ def _raster_mask(input_dem, polygon, out_name):
     path to the output raster
     """
 
-    output_dem = os.path.join(os.path.dirname(input_dem), out_name+'.tif')
+    output_dem = os.path.join(new_path, out_name+'.tif')
 
     geoms = [mapping(polygon)]
 
     with rasterio.open(input_dem) as src:
-        out_image, out_transform = mask(src, geoms, nodata=np.nan, crop=False)
+        out_image, out_transform = mask(src, geoms)
         out_meta = src.meta.copy()
 
     out_meta.update({"driver": "GTiff",
                      "height": out_image.shape[1],
                      "width": out_image.shape[2],
-                     "nodata": np.nan,
+                     "nodata": src.nodatavals[0],
                      "transform": out_transform})
     with rasterio.open(output_dem, "w", **out_meta) as dest:
         dest.write(out_image)
@@ -68,7 +72,7 @@ def _convert_to_polygon(gpd_obj):
     gpd.GeoDataFrame
     """
     for i in gpd_obj.index:
-        if gpd_obj.loc[i, 'geometry'].type is not 'Polygon':
+        if gpd_obj.loc[i, 'geometry'].type != 'Polygon':
             geom = gpd_obj.loc[i, 'geometry']
             area = [glac.area for glac in geom]
             gpd_obj.set_value(i, 'geometry', geom[np.argmax(area)])
@@ -233,35 +237,7 @@ def _fill_pits_with_saga(dem, saga_cmd=None):
     return filled_dem
 
 
-def _flowacc(input_dem):
-    """create a raster which only contains flowaccumulation at the gutter,
-    used for pour_point identification
-
-    Parameters
-    ----------
-    input_dem   : str
-        path to a raster file
-
-    Returns
-    -------
-    path to raster file with the flow accumulation gutter
-    """
-    flow_direction = os.path.join(os.path.dirname(input_dem), 'flow_dir.tif')
-    flow_accumulation = os.path.join(os.path.dirname(input_dem),
-                                     'flow_accumulation.tif')
-    # calculate flow direction
-    routing.flow_direction_d_inf(input_dem, flow_direction)
-    # calculate flow_accumulation
-    routing.flow_accumulation(flow_direction, input_dem, flow_accumulation)
-    # mask along gutter
-    gutter_shp = os.path.join(os.path.dirname(input_dem), 'gutter.shp')
-    gutter = gpd.read_file(gutter_shp)['geometry'][0]
-    _raster_mask(flow_accumulation, gutter, 'flow_gutter')
-
-    return os.path.join(os.path.dirname(input_dem), 'flow_gutter.tif')
-
-
-def flowshed_calculation(dem, shp):
+def flowshed_calculation(dem, shp,watershed_dir):
     """ calculate flowsheds
 
     Parameters
@@ -270,6 +246,8 @@ def flowshed_calculation(dem, shp):
         path to a raster file
     shp : str
         path to a shape file
+    watershed_dir:str
+        path to 'all_watersheds.shp'
 
     Returns
     -------
@@ -277,12 +255,8 @@ def flowshed_calculation(dem, shp):
     (shapely.geometry.Polygon)
     """
     dir = os.path.dirname(dem)
-    watershed_dir = os.path.join(dir, 'all_watersheds.shp')
     flowshed_dir = os.path.join(dir, 'flowshed.shp')
-    # calculate watersheds
-    routing.delineate_watershed(dem, shp, 1, 100, watershed_dir,
-                                os.path.join(dir, 'snapped_outlet_points.shp'),
-                                os.path.join(dir, 'stream_out_uri.tif'))
+
     watersheds = gpd.read_file(watershed_dir).buffer(0)
     pour_points = gpd.read_file(dir + '/pour_points.shp')
     flowsheds = gpd.GeoSeries(watersheds.intersection(co), crs=crs)
@@ -348,33 +322,56 @@ def _gutter(masked_dem, depth):
     with rasterio.open(masked_dem) as src1:
         mask_band = np.array(src1.read(1))
         with rasterio.open(gutter_dem) as src:
-            mask_band = np.float32(mask_band - depth * (~np.isnan(np.array(
-                src.read(1)))))
+            mask_band = np.float32(mask_band - depth * (np.array(src.read(1))!=src.nodatavals))
         with rasterio.open(gutter2_dem, "w", **src.meta.copy()) as dest:
             dest.write_band(1, mask_band)
 
     return gutter2_dem
 
 
-def identify_pour_points(dem):
+def identify_pour_points(input_dem,flow_cal_routing):
     """ create flow accumulation gutter and identify pour points
 
     Parameters
     ----------
     dem :   str
         path to the raster file
+    flow_cal_method :   str
+        Routing algorithm to use:
+        'd8'   : D8 flow directions
+        'dinf' : D-infinity flow directions
+        'mfd'  : multiple flow directions
 
     Returns
     -------
     path to a shape file containing all pour points
     """
-    # calculation of flow accumulation and flow direction
-    flow_gutter = _flowacc(dem)
+    flow_acc = os.path.join(new_path, 'flow_acc.tif')
 
-    # identify Pour Points
-    pour_points_shp = _pour_points(flow_gutter)
+    
+    # read dem
+    grid = Grid.from_raster(input_dem)
+    dem = grid.read_raster(input_dem)
+    # flow direction
+    fdir = grid.flowdir(dem, routing=flow_cal_routing)
+    # accumulation
+    acc = grid.accumulation(fdir,routing=flow_cal_routing)
+    with rasterio.open(input_dem) as src:
+        profile=src.profile
+        profile.update(dtype=rasterio.float64)
+        with rasterio.open(flow_acc, 'w', **profile) as dst:
+            dst.write(acc.reshape((1,acc.shape[0],acc.shape[1])))
 
-    return pour_points_shp
+    # mask along gutter
+    gutter_shp = os.path.join(new_path, 'gutter.shp')
+    gutter = gpd.read_file(gutter_shp)['geometry'][0]
+    _raster_mask(flow_acc, gutter, 'flow_gutter')
+
+    flow_gutter=os.path.join(new_path, 'flow_gutter.tif')
+    # identify Pour Points and watershed
+    watershed,pour_points_shp = _pour_points(input_dem,flow_gutter,flow_cal_routing)
+
+    return pour_points_shp,watershed
 
 
 def _intersection_of_glaciers(gpd_obj, index):
@@ -433,7 +430,7 @@ def _create_p_glac(shp):
     return p_glac
 
 
-def merge_flows(shed_shp, pour_point_shp):
+def merge_flows(shed_shp, pour_point_shp,input_shp):
     """merge the flowsheds together. First, P_glac(circle which radius depends
     on the flowaccumulation) is calculated for each pour point. If one or more
     fowsheds overlaie by the area of this circle, they are merged together.
@@ -447,6 +444,8 @@ def merge_flows(shed_shp, pour_point_shp):
         path to the shape file containing the flowsheds, that should be merged
     pour_point_shp  :   str
         path to the shape file containing the pour points
+    input_shp       :   str
+        path to 'outlines.tar.gz', for copying attributes needed from original inventory
 
     Returns
     number of glaciers
@@ -455,7 +454,7 @@ def merge_flows(shed_shp, pour_point_shp):
     """
     import time
     start = time.time()
-    p_glac_dir = os.path.join(os.path.dirname(pour_point_shp), 'p_glac.shp')
+    p_glac_dir = os.path.join(new_path, 'p_glac.shp')
     p_glac = _create_p_glac(pour_point_shp)
     p_glac.to_file(p_glac_dir)
 
@@ -465,7 +464,7 @@ def merge_flows(shed_shp, pour_point_shp):
         overlaps = flows[flows.intersects(p_glac.loc[j, 'geometry'])]
         if len(overlaps) > 1:
             union = cascaded_union(overlaps.loc[:, 'geometry'])
-            flows.set_value(overlaps.index[0], 'geometry', union)
+            flows.at[overlaps.index[0],'geometry']=union
             del_ids = overlaps.index.drop(overlaps.index[0])
             flows = flows.loc[flows.index.difference(del_ids)]
     # add gaps
@@ -476,11 +475,11 @@ def merge_flows(shed_shp, pour_point_shp):
         difference = co.difference(all_flows.simplify(0.00001))
 
     # gpd.GeoDataFrame(geometry=[difference], crs=crs).plot()
-    if (difference.type is 'Polygon') and (difference.area > 0.1):
+    if (difference.type == 'Polygon') and (difference.area > 0.1):
         glaciers, done = _merge_sliver(flows, difference)
     last_sliver = []
 
-    if difference.type is 'MultiPolygon':
+    if difference.type == 'MultiPolygon':
         for polygon in difference:
             if polygon.area > 0.1:
                 glaciers, done = _merge_sliver(flows, polygon)
@@ -490,10 +489,10 @@ def merge_flows(shed_shp, pour_point_shp):
     glaciers = flows.loc[flows.index.difference(slivers.index)]
     if len(glaciers) <= 1:
         return 1
-    glaciers.to_file(os.path.join(os.path.dirname(pour_point_shp),
+    glaciers.to_file(os.path.join(new_path,
                                   'glaciers.shp'))
     if not slivers.empty:
-        slivers.to_file(os.path.join(os.path.dirname(pour_point_shp),
+        slivers.to_file(os.path.join(new_path,
                                      'slivers.shp'))
     # merge slivers to glaciers
     for k in slivers.index:
@@ -530,11 +529,15 @@ def merge_flows(shed_shp, pour_point_shp):
     glaciers.loc[:, 'Area'] = glaciers.geometry.area/10**6
     glaciers = glaciers.sort_values('Area', ascending=False)
     glaciers = glaciers.reset_index()
-
+    
     glaciers['Perc_Area'] = glaciers.Area / glaciers.loc[0].Area
+    
+    # copy needed attributes
+    original=gpd.read_file('tar://'+input_shp)
+    glaciers['BgnDate']=original.loc[0,'BgnDate']
 
     # save glaciers
-    glaciers.to_file(os.path.join(os.path.dirname(pour_point_shp),
+    glaciers.to_file(os.path.join(os.path.dirname(new_path),
                                   'divides.shp'))
     return len(glaciers)
 
@@ -662,11 +665,11 @@ def _merge_sliver(gpd_obj, polygon):
 
     if np.max(intersection_array) != 0:
         max_b = np.argmax(intersection_array)
-        poly = gpd_obj.loc[max_b, 'geometry'].simplify(0.01).buffer(0)
+        poly = gpd_obj.iloc[max_b, 1].simplify(0.01).buffer(0)
         geom = poly.union(polygon.buffer(0)).buffer(0)
-        if geom.type is not 'Polygon':
+        if geom.type != 'Polygon':
             geom = geom.buffer(-0.01).buffer(0.01)
-        gpd_obj.set_value(max_b, 'geometry', geom)
+        gpd_obj.iat[max_b, 1]= geom
         merged = True
     # sliver does not touch glacier at the moment. Try again in the end
     else:
@@ -694,16 +697,15 @@ def _merge_overlaps(gpd_obj, l):
             if len(merge.index) == 1:
                 poly = gpd_obj.loc[l, 'geometry'].union(
                     gpd_obj.loc[merge.index[0], 'geometry'])
-                gpd_obj.set_value(l, 'geometry', poly)
+                gpd_obj.at[l, 'geometry']= poly
                 gpd_obj = gpd_obj.loc[gpd_obj.index.difference(merge.index)]
                 inter = _intersection_of_glaciers(gpd_obj, l)
                 to_merge = inter.area / gpd_obj.loc[l, 'geometry'].area > 0.5
                 merge = inter[to_merge]
 
             if len(merge.index) > 1:
-                cascaded = cascaded_union(gpd_obj.loc[merge.index, 'geometry'])
-                gpd_obj.set_value(l, 'geometry', gpd_obj.loc[l, 'geometry'].
-                                  union(cascaded))
+                cascaded = unary_union(gpd_obj.loc[merge.index, 'geometry'])
+                gpd_obj.at[l, 'geometry']= gpd_obj.loc[l, 'geometry'].union(cascaded)
                 gpd_obj = gpd_obj.loc[gpd_obj.index.difference(merge.index)]
                 inter = _intersection_of_glaciers(gpd_obj, l)
                 to_merge = inter.area / gpd_obj.loc[l, 'geometry'].area > 0.5
@@ -787,7 +789,7 @@ def _smooth_dem(dem):
     -------
     str to the smoothed dem file
     """
-    smoothed_dem = os.path.join(os.path.dirname(dem), 'smoothed.tif')
+    smoothed_dem = os.path.join(new_path, 'smoothed.tif')
     with rasterio.open(dem) as src:
         array = src.read()
         profile = src.profile
@@ -810,32 +812,39 @@ def _transform_coord(tupel, transform):
     -------
     shapely.geometry.Point object
     """
-    new_x = transform[0]+(tupel[1]+1)*transform[1]-transform[1]/2
-    new_y = transform[3]+tupel[0]*transform[-1]-transform[1]/2
+    new_x = transform[2]+(tupel[1]+1)*transform[0]-transform[0]/2
+    new_y = transform[5]+tupel[0]*transform[4]+transform[4]/2
 
-    return Point(new_x, new_y)
+    return new_x,new_y,Point(new_x, new_y)
 
 
-def _pour_points(dem):
+def _pour_points(input_dem,flow_gutter,flow_cal_routing):
     """
 
     Parameters
     ----------
-    dem : str
-        path to a dem file
+    input_dem   : str
+        path to dem.tif
+    flow_gutter : str
+        path to flow_gutter.tif
+    flow_cal_routing   : str
+        Routing algorithm to use
 
     Returns
     -------
     path to a shapefile containing all pour points
     """
+    grid = Grid.from_raster(input_dem)
+    dem = grid.read_raster(input_dem)
+    fdir = grid.flowdir(dem,routing=flow_cal_routing)
     # open gutter with flow accumulation
-    with rasterio.open(dem) as src:
+    with rasterio.open(flow_gutter) as src:
         # TODO: new rasterio version will return affine.Affine()
         # --> order will change
         transform = src.transform
         band = np.array(src.read(1))
-    im = img_as_float(band)
-    nan = np.where(np.isnan(im))
+    im = band
+    nan = np.where(im==src.nodatavals)
     # set nan to zero
     im[nan] = 0
     # calculate maxima
@@ -843,21 +852,31 @@ def _pour_points(dem):
     # transform maxima to (flowaccumulation,coordinates)
     new_coord = []
     new = []
+    union=[]
     dtype = [('flowaccumulation', float), ('coordinates', object)]
     # transform coordinates
-    for x, y in coordinates:
-        new_coord.append((im[x][y], _transform_coord([x, y], transform)))
-        new.append(Point(_transform_coord([x, y], transform)))
+    for index,elem in enumerate(coordinates):
+        y,x=elem
+        new_x,new_y,point=_transform_coord([y, x], transform)
+        catch=grid.catchment(x=x,y=y,fdir=fdir,routing=flow_cal_routing,xytype='index')
+        a=np.asarray(1*catch).astype('uint8')
+        shapes = rasterio.features.shapes(a,transform=src.transform)
+        polygons = [shapely.geometry.Polygon(shape[0]["coordinates"][0]) for shape in shapes if shape[1] == 1]
+        if len(polygons)>1:
+            union.append(MultiPolygon(polygons))
+        else:
+            union.append(Polygon(polygons[0]))
+        new_coord.append((im[y][x], point))
+        new.append(Point(point))
     new_coord = np.array(new_coord, dtype=dtype)
-    # sort array  by flowaccumulation
-    new_coord = np.sort(new_coord, order='flowaccumulation')
-    # reverse array
-    new_coord = new_coord[::-1]
+    watershed=gpd.GeoDataFrame(geometry=union,crs=crs)
     pp = gpd.GeoDataFrame({'flowacc': new_coord['flowaccumulation']},
                           geometry=new_coord['coordinates'],  crs=crs)
-    pp_shp = os.path.join(os.path.dirname(dem), 'pour_points.shp')
+    pp_shp = os.path.join(os.path.dirname(input_dem), 'pour_points.shp')
+    watershed_shp=os.path.join(new_path, 'all_watersheds.shp')
+    watershed.to_file(watershed_shp)
     pp.to_file(pp_shp)
-    return pp_shp
+    return watershed_shp,pp_shp
 
 
 def preprocessing(dem, shp, saga_cmd=None):
@@ -890,13 +909,14 @@ def preprocessing(dem, shp, saga_cmd=None):
     global out1
     global filled_dem
     pixelsize = 40
+    filled_dem=os.path.join(new_path, 'filled_dem.tif')
 
     smoothed_dem = _smooth_dem(dem)
     # fill pits
     filled_dem = _fill_pits_with_saga(smoothed_dem, saga_cmd=saga_cmd)
 
-    # read outlines with gdal
-    out1 = gpd.read_file(shp)
+    # read outlines
+    out1 = gpd.read_file('tar://'+shp)
     crs = out1.crs
     co = out1.loc[0, 'geometry'].buffer(0)
 
@@ -909,7 +929,7 @@ def preprocessing(dem, shp, saga_cmd=None):
     return gutter_dem
 
 
-def dividing_glaciers(input_dem, input_shp, saga_cmd=None):
+def dividing_glaciers(input_dem, input_shp, flow_cal_routing,saga_cmd=None):
     """ This is the main structure of the algorithm
 
     Parameters
@@ -917,34 +937,42 @@ def dividing_glaciers(input_dem, input_shp, saga_cmd=None):
     input_dem : str
         path to the raster file(.tif) of the glacier, resolution has to be 40m!
     input_shp : str
-        path to the shape file of the outline of the glacier
+        path to the tar outlines file of the glacier
+    flow_cal_routing: str
+        Routing algorithm to use
 
     Returns
     -------
     number of divides (int)
     """
+    # make a path to store intermediate files, it can be remove after finish the partitioning if needed
+    global new_path
+    new_path=os.path.join(os.path.dirname(input_dem),'divides')
+    os.mkdir(new_path)
+    #resample the dem to 40m if it's not
+    resampled_dem = os.path.join(new_path, 'resampled.tif')
+    with rasterio.open(input_dem) as src:
+        if src.transform[0]!=40:
+            gdal.Warp(resampled_dem,input_dem,xRes=40,yRes=40)
+        else:
+            resampled_dem=input_dem
+            
     if sys.platform.startswith('win'):
         saga_cmd = 'C:\\"Program Files"\\SAGA-GIS\\saga_cmd.exe'
-        gutter_dem = preprocessing(input_dem, input_shp, saga_cmd=saga_cmd)
+        gutter_dem = preprocessing(resampled_dem, input_shp, saga_cmd=saga_cmd)
     else:
-        gutter_dem = preprocessing(input_dem, input_shp)
-    pour_points_dir = identify_pour_points(gutter_dem)
-    flowsheds_dir = flowshed_calculation(gutter_dem, pour_points_dir)
-    no_glaciers = merge_flows(flowsheds_dir, pour_points_dir)
+        gutter_dem = preprocessing(resampled_dem, input_shp)
+    pour_points_dir,watershed_dir = identify_pour_points(gutter_dem,flow_cal_routing)
+    flowsheds_dir = flowshed_calculation(gutter_dem, pour_points_dir,watershed_dir)
+    no_glaciers = merge_flows(flowsheds_dir, pour_points_dir,input_shp)
 
+    # remove intermediate files    
+    shutil.rmtree(new_path)
+    
     # merge_flowsheds(p_glac, flowsheds_dir)
 
     # Allocation of flowsheds to individual glaciers
     # & Identification of sliver polygons
     # no_glaciers, all_polygon = merge_flowsheds(p_glac, watersheds)
 
-    # delete files which are not needed anymore
-    '''
-    for file in os.listdir(os.path.dirname(input_shp)):
-        for word in ['P_glac', 'all', 'flow', 'glaciers', 'gutter', 'p_glac',
-                     'pour', 'smoothed', 'snapped', 'stream', 'masked',
-                     'slivers', 'filled']:
-            if file.startswith(word):
-                os.remove(os.path.join(os.path.dirname(input_shp), file))
-    '''
     return no_glaciers
